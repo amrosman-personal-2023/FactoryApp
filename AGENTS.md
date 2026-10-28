@@ -22,5 +22,5 @@ Demo: migrate ORDERSYS, a legacy green-screen (curses) order-entry app, to a mod
 
 ## Conventions
 - Money is stored as integer cents. Never use floats for stored amounts.
-- Characterization tests in `tests/` must pass against both legacy logic and the new API before a milestone is complete.
+- Port the rules pinned in `tests/test_characterization.py` into equivalent checks against the new API (same inputs, same expected values). The legacy tests stay as the reference and must keep passing. All checks must pass before a milestone is complete.
 - Python 3.11+; use `unittest`.

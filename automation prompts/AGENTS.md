@@ -5,7 +5,7 @@ Demo: migrate ORDERSYS, a legacy green-screen (curses) order-entry app, to a mod
 
 ## Layout
 - `legacy/` - source system. `db.py` (schema + seed), `ordersys.py` (curses screens with business rules inline).
-- `target/` - new app goes here (FastAPI backend + web UI). Starts empty.
+- `target/` - new app goes here (FastAPI backend + web UI).
 
 ## Commands
 - Seed legacy DB: `cd legacy && python3 -I db.py`
@@ -23,4 +23,4 @@ Demo: migrate ORDERSYS, a legacy green-screen (curses) order-entry app, to a mod
 ## Conventions
 - Money is stored as integer cents. Never use floats for stored amounts.
 - Characterization tests in `tests/` must pass against both legacy logic and the new API before a milestone is complete.
-- Python 3.11+; use `unittest.`.
+- Python 3.11+; use `unittest`.
