@@ -1,0 +1,25 @@
+# ==========================================
+# Python Runtime Temporary & Cache Files
+# ==========================================
+
+# Bytecode cache directories (generated at runtime)
+__pycache__/
+
+# ==========================================
+# Python Virtual Environments
+# ==========================================
+
+# Standard env folders
+.venv/
+venv/
+env/
+ENV/
+
+# Conda environments
+conda-env/
+
+# Pipenv environments
+.venv
+
+# poetry environments
+.poetry/
