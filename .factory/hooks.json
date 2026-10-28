@@ -1,0 +1,14 @@
+{
+  "PostToolUse": [
+    {
+      "matcher": "Create|Edit|ApplyPatch",
+      "hooks": [
+        {
+          "type": "command",
+          "command": "bash \"$FACTORY_PROJECT_DIR\"/.factory/hooks/run_tests.sh",
+          "timeout": 120
+        }
+      ]
+    }
+  ]
+}
