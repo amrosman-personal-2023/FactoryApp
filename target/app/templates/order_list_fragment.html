@@ -1,0 +1,55 @@
+{% set verbs = {"pick": "PICKED", "ship": "SHIPPED", "cancel": "CANCELLED"} %}
+<div id="order-message" aria-live="polite">
+{% if done %}
+  <p class="success" role="status"><strong>ORDER {{ done.order_no }} {{ verbs[action] }}</strong>
+  {% if action == "cancel" %} - {{ done.qty }} {{ done.sku }} returned to stock{% endif %}</p>
+{% elif error %}
+  <div class="error" role="alert">
+  {% if current %}
+    <p><strong>ORDER {{ current.order_no }} IS {{ current.status_name }} - {{ action|upper }} NOT ALLOWED</strong></p>
+  {% elif order_no %}
+    <p><strong>ORDER {{ order_no }}: {{ error }}</strong></p>
+  {% else %}
+    <p><strong>{{ error }}</strong></p>
+  {% endif %}
+    <p>Nothing changed.</p>
+  </div>
+{% endif %}
+{% if unavailable %}
+  <p class="error" role="alert"><strong>{{ unavailable }}</strong> - the order list could not be loaded.
+  <a href="/orders">Refresh</a></p>
+{% endif %}
+</div>
+
+{% if orders %}
+<table>
+  <caption class="visually-hidden">All orders, newest first</caption>
+  <thead>
+    <tr><th scope="col">Order</th><th scope="col">Customer</th><th scope="col">SKU</th>
+        <th scope="col">Qty</th><th scope="col">Total</th><th scope="col">Status</th>
+        <th scope="col">Actions</th></tr>
+  </thead>
+  <tbody>
+  {% for o in orders %}
+    <tr id="order-{{ o.order_no }}" data-order-no="{{ o.order_no }}" data-status="{{ o.status }}">
+      <td>{{ o.order_no }}</td><td>{{ o.cust_no }}</td><td>{{ o.sku }}</td>
+      <td class="num">{{ o.qty }}</td><td class="num">{{ o.total_cents|dollars }}</td>
+      <td>{{ o.status_name }} ({{ o.status }})</td>
+      <td>
+      {% for a in o.actions %}
+        <form class="inline" action="/orders/{{ o.order_no }}/{{ a }}" method="post"
+              hx-post="/orders/{{ o.order_no }}/{{ a }}" hx-target="#order-list"
+              hx-swap="innerHTML" hx-disabled-elt="#order-list button">
+          <button type="submit" aria-label="{{ a|capitalize }} order {{ o.order_no }}">{{ a|capitalize }}</button>
+        </form>
+      {% else %}
+        <span aria-label="No actions for order {{ o.order_no }}">&mdash;</span>
+      {% endfor %}
+      </td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% elif not unavailable %}
+<p id="no-orders" role="status">NO ORDERS ON FILE - <a href="/orders/new">CREATE ONE VIA ORDER ENTRY</a></p>
+{% endif %}

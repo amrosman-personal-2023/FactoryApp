@@ -3,7 +3,7 @@
   <p><strong>ORDER {{ order_no }} CREATED</strong></p>
   <p>{{ q.cust_no }} {{ q.cust_name }} &middot; {{ q.sku }} x {{ q.qty }} &middot; total {{ q.price.total_cents|dollars }}</p>
   {% if repriced %}<p>Pricing changed after the preview; the order was saved at the current price.</p>{% endif %}
-  <p><a href="/orders/new">Enter another order</a></p>
+  <p><a href="/orders/new">Enter another order</a> &middot; <a href="/orders">View order list</a></p>
 </div>
 {% elif declined %}
 <div role="status">

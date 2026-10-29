@@ -55,6 +55,28 @@ class SmokeTests(WebTestCase):
         self.client.get("/orders/new")
         self.assertEqual(self.snapshot(), before)
 
+    def test_order_list_page_renders(self):
+        r = self.client.get("/orders")
+        self.assertEqual(r.status_code, 200)
+        self.assertIn("ORDER LIST", r.text)
+        self.assertIn('id="order-1"', r.text)
+
+    def test_customers_page_links_to_order_list(self):
+        r = self.client.get("/customers")
+        self.assertIn('href="/orders"', r.text)
+
+    def test_order_list_page_load_writes_nothing(self):
+        before = self.snapshot()
+        self.client.get("/orders")
+        self.client.get("/api/orders")
+        self.assertEqual(self.snapshot(), before)
+
+    def test_order_list_api_end_to_end(self):
+        r = self.client.get("/api/orders")
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual([o["order_no"] for o in r.json()], [4, 3, 2, 1])
+        self.assertEqual(self.client.post("/api/orders/1/pick").json()["status"], "P")
+
     def test_create_order_api_end_to_end(self):
         r = self.client.post("/api/orders", json={"cust_no": "C1001", "sku": "HAM-01", "qty": "3"})
         self.assertEqual(r.status_code, 201)

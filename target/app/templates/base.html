@@ -18,12 +18,15 @@
     form.inline { display: inline-block; margin-right: .5rem; }
     .error { color: #f66; }
     #result { margin-top: 1rem; }
+    td.num { text-align: right; }
+    .visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
   </style>
 </head>
 <body>
   <nav aria-label="Main">
     <a href="/customers">Customers</a>
     <a href="/orders/new">Order entry</a>
+    <a href="/orders">Order list</a>
   </nav>
   {% block content %}{% endblock %}
 </body>

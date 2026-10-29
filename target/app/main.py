@@ -10,7 +10,8 @@ from app import db
 from fastapi import FastAPI, Form, Request
 from fastapi.responses import HTMLResponse
 
-from .routers import customers, orders
+from .routers import customers, order_lifecycle, orders
+from .services import lifecycle
 from .services import orders as order_service
 from .services import pricing
 from .templating import TEMPLATES
@@ -25,6 +26,7 @@ async def lifespan(_app):
 app = FastAPI(title="ORDERSYS web", version="0.1.0", lifespan=lifespan)
 app.include_router(customers.router)
 app.include_router(orders.router)
+app.include_router(order_lifecycle.router)
 
 
 @app.get("/health")
@@ -131,3 +133,39 @@ def order_confirm(request: Request, cust_no: RawFormField = "", sku: RawFormFiel
 @app.post("/orders/decline", response_class=HTMLResponse)
 def order_decline(request: Request):
     return _order_render(request, "order_result_fragment.html", {"declined": True, "form": {}})
+
+
+# Order list page: every order newest first with Pick/Ship/Cancel controls for
+# the transitions its status allows. Actions run the same lifecycle service as
+# POST /api/orders/{order_no}/{action}, then re-render the whole list so every
+# row reflects the database after the change.
+
+def _order_list_render(request, context, status_code=200):
+    """HTMX gets the list fragment; a plain form post or GET gets the full page."""
+    try:
+        context = dict(context, orders=lifecycle.list_orders())
+    except lifecycle.LifecycleError as exc:
+        context = dict(context, orders=[], unavailable=exc.reason)
+        if "done" not in context and "error" not in context:
+            status_code = order_lifecycle.LIFECYCLE_STATUS[exc.reason]
+    template = ("order_list_fragment.html" if request.headers.get("HX-Request") == "true"
+                else "order_list.html")
+    return TEMPLATES.TemplateResponse(request, template, context, status_code=status_code)
+
+
+@app.get("/orders", response_class=HTMLResponse)
+def order_list_page(request: Request):
+    return _order_list_render(request, {})
+
+
+@app.post("/orders/{order_no}/{action}", response_class=HTMLResponse)
+def order_action(request: Request, order_no: order_lifecycle.OrderNo,
+                 action: order_lifecycle.Action):
+    try:
+        order = lifecycle.apply_action(order_no, action)
+    except lifecycle.LifecycleError as exc:
+        return _order_list_render(
+            request, {"error": exc.reason, "order_no": order_no, "action": action,
+                      "current": exc.order},
+            status_code=order_lifecycle.LIFECYCLE_STATUS[exc.reason])
+    return _order_list_render(request, {"done": order, "action": action})

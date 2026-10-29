@@ -10,9 +10,9 @@ Rules for missions extending this file:
 
 Covered: customer lookup + open credit (reference endpoint); order entry
 pricing/discount/tax, input width, stock check/decrement and credit-limit
-rejection (Order*ParityTests below).
-TO ADD (mission workspace): restock on cancel, status flow N->P->S, cancel
-rules, sales report.
+rejection (Order*ParityTests below); order list order, status flow N->P->S,
+cancel rules and restock on cancel (OrderList/OrderStatusFlow ParityTests).
+TO ADD (mission workspace): sales report.
 """
 from helpers import WebTestCase
 
@@ -329,3 +329,207 @@ class OrderCreditParityTests(OrderEntryTestCase):
                      "VALUES ('C1001','HAM-01',1,999999,'C')")
         r, _ = self.assert_matches_legacy("C1001", "HAM-01", "3")
         self.assertEqual(r.status_code, 201, r.text)
+
+
+# ---------------------------------------------------------------------------
+# Order list and lifecycle parity (legacy order_list_screen). Expected
+# outcomes come from the frozen StatusFlowTests or from the real legacy
+# handler run on an identical copy of the fixture (LegacyTwin.order_list).
+# ---------------------------------------------------------------------------
+import re  # noqa: E402
+
+from fastapi.testclient import TestClient  # noqa: E402
+from helpers import app, appdb  # noqa: E402
+
+LEGACY_LIST_ROW = re.compile(r"^(\d+)\s+(\S+)\s+(\S+)\s+(\d+)\s+(\d+\.\d\d)\s+([NPSC])$")
+ACTION_KEYS = {"pick": "P", "ship": "S", "cancel": "C"}
+
+
+def legacy_rows(screen_text):
+    """(order_no, cust, sku, qty, total text, status) for each row the legacy list drew."""
+    rows = []
+    for line in screen_text.split("\n"):
+        m = LEGACY_LIST_ROW.match(line)
+        if m:
+            n, cust, sku, qty, total, status = m.groups()
+            rows.append((int(n), cust, sku, int(qty), total, status))
+    return rows
+
+
+class OrderLifecycleTestCase(OrderEntryTestCase):
+    def act(self, order_no, action):
+        return self.client.post(f"/api/orders/{order_no}/{action}")
+
+    def status(self, order_no):
+        return self.query("SELECT status FROM orders WHERE order_no=?", order_no)[0][0]
+
+    def legacy_downs(self, order_no):
+        """Cursor moves needed to select order_no in the legacy newest-first list."""
+        listed = [r[0] for r in legacy_rows(self.twin().order_list())]
+        return listed.index(order_no)
+
+
+class OrderListParityTests(OrderLifecycleTestCase):
+    def test_list_is_newest_first_including_cancelled_matches_legacy(self):
+        legacy = legacy_rows(self.twin().order_list())
+        body = self.client.get("/api/orders").json()
+        self.assertEqual([o["order_no"] for o in body], [4, 3, 2, 1])
+        self.assertEqual([r[0] for r in legacy], [o["order_no"] for o in body])
+        for row, o in zip(legacy, body):
+            self.assertEqual(row[:4] + row[5:],
+                             (o["order_no"], o["cust_no"], o["sku"], o["qty"], o["status"]))
+            self.assertEqual(row[4], "%d.%02d" % divmod(o["total_cents"], 100))
+        self.assertEqual([o["status"] for o in body], ["C", "S", "P", "N"])
+
+    def test_list_matches_stored_rows_in_integer_cents(self):
+        body = self.client.get("/api/orders").json()
+        stored = self.query("SELECT order_no,cust_no,sku,qty,total_cents,status FROM orders "
+                            "ORDER BY order_no DESC")
+        self.assertEqual([tuple(o.values()) for o in body], stored)
+        for o in body:
+            self.assertIs(type(o["total_cents"]), int)
+
+    def test_new_order_is_listed_first(self):
+        created = self.order("C1001", "HAM-01", "3").json()
+        body = self.client.get("/api/orders").json()
+        self.assertEqual(body[0]["order_no"], created["order_no"])
+        self.assertEqual([o["order_no"] for o in body], [5, 4, 3, 2, 1])
+
+    def test_status_change_does_not_reorder(self):
+        self.assertEqual(self.act(1, "pick").status_code, 200)
+        self.assertEqual([o["order_no"] for o in self.client.get("/api/orders").json()], [4, 3, 2, 1])
+
+    def test_empty_list_message(self):
+        # legacy test_empty_list_message: "NO ORDERS ON FILE" with no rows
+        self.execute("DELETE FROM orders")
+        self.assertIn("NO ORDERS ON FILE", self.twin().order_list())
+        self.assertEqual(self.client.get("/api/orders").json(), [])
+        page = self.client.get("/orders")
+        self.assertEqual(page.status_code, 200)
+        self.assertIn("NO ORDERS ON FILE", page.text)
+
+    def test_get_single_order(self):
+        self.assertEqual(self.client.get("/api/orders/2").json(),
+                         {"order_no": 2, "cust_no": "C1002", "sku": "SAW-02", "qty": 2,
+                          "total_cents": 5090, "status": "P"})
+        r = self.client.get("/api/orders/99")
+        self.assertEqual((r.status_code, r.json()["detail"]), (404, "ORDER NOT FOUND"))
+
+
+class OrderStatusFlowParityTests(OrderLifecycleTestCase):
+    def test_invalid_transition_is_silent_noop(self):
+        # legacy test_invalid_transition_is_silent_noop: order 1 is N; S needs P first
+        before = self.snapshot()
+        r = self.act(1, "ship")
+        self.assertEqual(r.status_code, 409)
+        self.assertEqual(r.json()["order"]["status"], "N")
+        self.assertEqual(self.status(1), "N")
+        self.assertEqual(self.snapshot(), before)
+
+    def test_new_to_picked_to_shipped(self):
+        # legacy test_new_to_picked_to_shipped
+        self.assertEqual(self.act(1, "pick").json()["status"], "P")
+        self.assertEqual(self.act(1, "ship").json()["status"], "S")
+        self.assertEqual(self.status(1), "S")
+
+    def test_cannot_cancel_shipped(self):
+        # legacy test_cannot_cancel_shipped: order 3 is already shipped
+        before = self.snapshot()
+        self.assertEqual(self.act(3, "cancel").status_code, 409)
+        self.assertEqual(self.status(3), "S")
+        self.assertEqual(self.snapshot(), before)
+
+    def test_cancel_restocks(self):
+        # legacy test_cancel_restocks: order 2 is P, qty 2
+        before = self.stock("SAW-02")
+        r = self.act(2, "cancel")
+        self.assertEqual(r.status_code, 200, r.text)
+        self.assertEqual(self.status(2), "C")
+        self.assertEqual(self.stock("SAW-02"), before + 2)
+
+    def test_cancel_new_order_restocks_and_matches_legacy(self):
+        twin = self.twin()
+        twin.order_list(self.legacy_downs(1), "C")
+        before = self.stock("HAM-01")
+        self.assertEqual(self.act(1, "cancel").status_code, 200)
+        self.assertEqual(self.stock("HAM-01"), before + 3)
+        self.assertEqual(self.snapshot(), twin.snapshot())
+
+    def test_every_action_status_pairing_matches_legacy(self):
+        """All 12 seed order/action pairs: 4 legal changes and 8 silent no-ops."""
+        changed = []
+        for order_no in (1, 2, 3, 4):
+            for action, key in ACTION_KEYS.items():
+                with self.subTest(order_no=order_no, action=action):
+                    appdb.init(reset=True).close()
+                    before = self.snapshot()
+                    twin = self.twin()
+                    twin.order_list(self.legacy_downs(order_no), key)
+                    r = self.act(order_no, action)
+                    self.assertEqual(self.snapshot(), twin.snapshot())
+                    legacy_changed = twin.snapshot() != before
+                    self.assertEqual(r.status_code, 200 if legacy_changed else 409, r.text)
+                    if legacy_changed:
+                        changed.append((order_no, action))
+        self.assertEqual(sorted(changed),
+                         [(1, "cancel"), (1, "pick"), (2, "cancel"), (2, "ship")])
+
+    def test_pick_and_ship_do_not_change_stock(self):
+        products = self.query("SELECT * FROM products ORDER BY sku")
+        self.act(1, "pick")
+        self.act(1, "ship")
+        self.act(2, "ship")
+        self.assertEqual(self.query("SELECT * FROM products ORDER BY sku"), products)
+
+    def test_repeated_cancel_restocks_once_like_legacy(self):
+        for order_no, sku, qty in ((1, "HAM-01", 3), (2, "SAW-02", 2)):
+            with self.subTest(order_no=order_no):
+                appdb.init(reset=True).close()
+                before = self.stock(sku)
+                twin = self.twin()
+                twin.order_list(self.legacy_downs(order_no), "CCC")
+                self.assertEqual(self.act(order_no, "cancel").status_code, 200)
+                self.assertEqual(self.act(order_no, "cancel").status_code, 409)
+                fresh = TestClient(app)
+                self.assertEqual(fresh.post(f"/api/orders/{order_no}/cancel").status_code, 409)
+                self.assertEqual(self.status(order_no), "C")
+                self.assertEqual(self.stock(sku), before + qty)
+                self.assertEqual(self.snapshot(), twin.snapshot())
+
+    def test_cancelled_order_does_not_count_toward_credit(self):
+        self.act(1, "cancel")
+        self.assertEqual(self.client.get("/api/customers/C1001").json()["open_total_cents"], 0)
+
+    def test_unknown_order_or_action_changes_nothing(self):
+        before = self.snapshot()
+        r = self.act(99, "cancel")
+        self.assertEqual((r.status_code, r.json()["detail"]), (404, "ORDER NOT FOUND"))
+        self.assertEqual(self.act(1, "delete").status_code, 422)
+        self.assertEqual(self.act("abc", "cancel").status_code, 422)
+        self.assertEqual(self.snapshot(), before)
+
+    def test_every_lifecycle_failure_has_an_http_status(self):
+        from app.routers.order_lifecycle import LIFECYCLE_STATUS
+        from app.services import lifecycle
+        self.assertEqual(set(LIFECYCLE_STATUS), {lifecycle.ORDER_NOT_FOUND,
+                                                 lifecycle.TRANSITION_NOT_ALLOWED,
+                                                 lifecycle.NOT_UPDATED,
+                                                 lifecycle.LIST_UNAVAILABLE})
+
+    def test_out_of_range_order_numbers_are_rejected_without_write(self):
+        before = self.snapshot()
+        for order_no in (0, -1, 2 ** 63, 10 ** 20):
+            with self.subTest(order_no=order_no):
+                self.assertEqual(self.client.get(f"/api/orders/{order_no}").status_code, 422)
+                self.assertEqual(self.act(order_no, "cancel").status_code, 422)
+                self.assertEqual(self.client.post(f"/orders/{order_no}/cancel").status_code, 422)
+        self.assertEqual(self.client.get(f"/api/orders/{2 ** 63 - 1}").status_code, 404)
+        self.assertEqual(self.snapshot(), before)
+
+    def test_cancel_with_missing_product_row_matches_legacy(self):
+        # Legacy restocks with an UPDATE that silently matches no product row.
+        self.execute("DELETE FROM products WHERE sku='HAM-01'")
+        twin = self.twin()
+        twin.order_list(self.legacy_downs(1), "C")
+        self.assertEqual(self.act(1, "cancel").status_code, 200)
+        self.assertEqual(self.snapshot(), twin.snapshot())

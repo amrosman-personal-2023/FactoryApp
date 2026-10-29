@@ -1,4 +1,4 @@
-"""Run the real legacy order_entry_screen against a copy of a target fixture.
+"""Run real legacy screen handlers against a copy of a target fixture.
 
 New boundary cases compare the target with what the legacy handler actually
 does on an identical disposable database, instead of hand-computed values.
@@ -14,7 +14,7 @@ from unittest import mock
 REPO_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, os.path.join(REPO_DIR, "tests"))
 
-from test_characterization import ENTER, FakeScreen, keys  # noqa: E402
+from test_characterization import ENTER, ESC, FakeScreen, keys  # noqa: E402
 
 import db as legacy_db  # noqa: E402  (legacy/db.py, put on sys.path by test_characterization)
 import ordersys  # noqa: E402
@@ -32,6 +32,14 @@ class LegacyTwin:
     def enter_order(self, cust, sku, qty, confirm="Y"):
         script = (keys(cust) + [ENTER] + keys(sku) + [ENTER] + keys(qty) + [ENTER]
                   + keys(confirm) + [ENTER, ord(" ")])
+        return self.run(ordersys.order_entry_screen, script)
+
+    def order_list(self, downs=0, letters=""):
+        """Legacy order_list_screen: move the cursor down, press keys, then ESC."""
+        script = [curses.KEY_DOWN] * downs + keys(letters) + [ESC]
+        return self.run(ordersys.order_list_screen, script)
+
+    def run(self, handler, script):
         scr = FakeScreen(script)
         opened = []
 
@@ -43,7 +51,7 @@ class LegacyTwin:
         try:
             with mock.patch.object(legacy_db, "connect", connect), \
                     mock.patch.object(curses, "curs_set", lambda *a: 0):
-                ordersys.order_entry_screen(scr)
+                handler(scr)
         finally:
             for conn in opened:
                 conn.close()
