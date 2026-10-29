@@ -13,7 +13,8 @@ echo "== Target web app: smoke + parity =="
 if python3 -c "import fastapi" 2>/dev/null; then
   (cd target && python3 -m unittest discover -s tests -v) || fail=1
 else
-  echo "SKIP: fastapi not installed. Run: python3 -m pip install -r target/requirements.txt"
+  echo "ERROR: FastAPI missing; install target/requirements.txt" >&2
+  fail=1
 fi
 
 exit $fail
