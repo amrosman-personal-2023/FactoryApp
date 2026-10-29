@@ -3,16 +3,33 @@
 <head>
   <meta charset="utf-8">
   <title>ORDERSYS</title>
+  <!-- Swap 4xx fragments so validation errors are shown; htmx 2 skips them by default. -->
+  <meta name="htmx-config" content='{"responseHandling":[{"code":"204","swap":false},{"code":"[23]..","swap":true},{"code":"4..","swap":true,"error":false},{"code":"...","swap":true,"error":true}]}'>
   <script src="https://unpkg.com/htmx.org@2.0.4"></script>
   <style>
     body { font-family: system-ui, sans-serif; margin: 2rem; background: #111; color: #3c3; }
+    nav { margin-bottom: 1rem; }
+    a { color: #3c3; }
+    nav a { margin-right: 1rem; }
     table { border-collapse: collapse; }
     th, td { padding: .25rem .75rem; text-align: left; border-bottom: 1px solid #333; }
     input, button { background: #111; color: #3c3; border: 1px solid #3c3; padding: .25rem .5rem; }
+    label { display: inline-block; min-width: 8rem; }
+    form.inline { display: inline-block; margin-right: .5rem; }
+    .error { color: #f66; }
     #result { margin-top: 1rem; }
+    td.num { text-align: right; }
+    .visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
   </style>
 </head>
 <body>
+  <nav aria-label="Main">
+    <a href="/customers">Customers</a>
+    <a href="/orders/new">Order entry</a>
+    <a href="/orders">Order list</a>
+    <a href="/reports/sales">Sales report</a>
+    <a href="/customers/search">Customer search</a>
+  </nav>
   {% block content %}{% endblock %}
 </body>
 </html>

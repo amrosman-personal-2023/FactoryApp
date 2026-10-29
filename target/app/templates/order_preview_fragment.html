@@ -1,0 +1,26 @@
+<section class="preview" aria-label="Order preview">
+  <h2>Order preview</h2>
+  <table>
+    <tr><th scope="row">Customer</th><td>{{ q.cust_no }} {{ q.cust_name }}</td></tr>
+    <tr><th scope="row">Product</th><td>{{ q.sku }} {{ q.descr }} &nbsp; {{ q.unit_cents|dollars }} &nbsp; STK {{ q.stock }}</td></tr>
+    <tr><th scope="row">Quantity</th><td>{{ q.qty }}</td></tr>
+    <tr><th scope="row">Gross</th><td id="gross">{{ q.price.gross_cents|dollars }}</td></tr>
+    <tr><th scope="row">Discount</th><td id="discount">{{ q.price.discount_cents|dollars }} ({{ q.price.discount_pct }}%)</td></tr>
+    <tr><th scope="row">Tax</th><td id="tax">{{ q.price.tax_cents|dollars }}</td></tr>
+    <tr><th scope="row">TOTAL</th><td id="total"><strong>{{ q.price.total_cents|dollars }}</strong></td></tr>
+  </table>
+  <p>Nothing has been saved yet. Confirm to create this order.</p>
+  <form action="/orders/confirm" method="post" hx-post="/orders/confirm"
+        hx-target="#result" hx-swap="innerHTML" hx-disabled-elt="#order-entry button"
+        class="inline">
+    <input type="hidden" name="cust_no" value="{{ q.cust_no }}">
+    <input type="hidden" name="sku" value="{{ q.sku }}">
+    <input type="hidden" name="qty" value="{{ q.qty }}">
+    <input type="hidden" name="preview_total_cents" value="{{ q.price.total_cents }}">
+    <button type="submit">Confirm order</button>
+  </form>
+  <form action="/orders/decline" method="post" hx-post="/orders/decline"
+        hx-target="#result" hx-swap="innerHTML" hx-disabled-elt="#order-entry button" class="inline">
+    <button type="submit">Decline</button>
+  </form>
+</section>

@@ -1,0 +1,11 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>SALES REPORT</h1>
+<p>Every customer with the number and value of orders that are not cancelled, highest sales first.</p>
+<p><a href="/reports/sales" hx-get="/reports/sales" hx-target="#sales-report"
+      hx-swap="innerHTML">Refresh</a></p>
+
+<div id="sales-report" aria-live="polite">
+  {% include "sales_report_fragment.html" %}
+</div>
+{% endblock %}

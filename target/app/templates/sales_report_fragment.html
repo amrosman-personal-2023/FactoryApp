@@ -1,0 +1,24 @@
+{% if unavailable %}
+<p class="error" role="alert"><strong>{{ unavailable }}</strong> - the sales report could not be loaded.
+<a href="/reports/sales">Refresh</a></p>
+{% else %}
+<table id="sales-report-table">
+  <caption class="visually-hidden">Sales by customer, highest first</caption>
+  <thead>
+    <tr><th scope="col">Customer</th><th scope="col">Name</th>
+        <th scope="col">Orders</th><th scope="col">Sales</th></tr>
+  </thead>
+  <tbody>
+  {% for r in report.rows %}
+    <tr id="report-{{ r.cust_no }}" data-cust-no="{{ r.cust_no }}">
+      <td>{{ r.cust_no }}</td><td>{{ r.name }}</td>
+      <td class="num">{{ r.order_count }}</td><td class="num">{{ r.sales_cents|dollars }}</td>
+    </tr>
+  {% endfor %}
+  </tbody>
+  <tfoot>
+    <tr id="report-grand-total"><th scope="row" colspan="3">GRAND TOTAL</th>
+        <td class="num"><strong>{{ report.grand_total_cents|dollars }}</strong></td></tr>
+  </tfoot>
+</table>
+{% endif %}

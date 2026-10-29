@@ -1,0 +1,17 @@
+{% if order_no %}
+<div class="success" role="status">
+  <p><strong>ORDER {{ order_no }} CREATED</strong></p>
+  <p>{{ q.cust_no }} {{ q.cust_name }} &middot; {{ q.sku }} x {{ q.qty }} &middot; total {{ q.price.total_cents|dollars }}</p>
+  {% if repriced %}<p>Pricing changed after the preview; the order was saved at the current price.</p>{% endif %}
+  <p><a href="/orders/new">Enter another order</a> &middot; <a href="/orders">View order list</a></p>
+</div>
+{% elif declined %}
+<div role="status">
+  <p>ORDER NOT CREATED - preview declined. Nothing was saved.</p>
+</div>
+{% else %}
+<div class="error" role="alert">
+  <p><strong>{{ error }}</strong></p>
+  <p>Nothing was saved. Correct the entry and preview again.</p>
+</div>
+{% endif %}

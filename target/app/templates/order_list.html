@@ -1,0 +1,11 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>ORDER LIST</h1>
+<p><a href="/orders">Refresh</a> &middot; <a href="/orders/new">New order</a></p>
+
+<!-- One request queue for every row action: while one is in flight further
+     clicks are dropped, so responses cannot arrive out of order. -->
+<div id="order-list" hx-sync="this:drop">
+  {% include "order_list_fragment.html" %}
+</div>
+{% endblock %}
