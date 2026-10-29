@@ -27,7 +27,6 @@ class Price:
     gross_cents: int
     discount_pct: int
     discount_cents: int
-    net_cents: int
     tax_cents: int
     total_cents: int
 
@@ -72,4 +71,4 @@ def price(unit_cents, qty, tier):
     discount = gross * pct // 100
     net = gross - discount
     tax = net * TAX_RATE_BASIS_POINTS // 10000
-    return Price(gross, pct, discount, net, tax, net + tax)
+    return Price(gross, pct, discount, tax, net + tax)

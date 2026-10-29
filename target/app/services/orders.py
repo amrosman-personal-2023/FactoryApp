@@ -20,10 +20,9 @@ NOT_CREATED = "ORDER NOT CREATED - PLEASE RETRY"
 class OrderRejected(Exception):
     """Business-rule rejection. ``reason`` is one of the module message constants."""
 
-    def __init__(self, reason, field=None):
+    def __init__(self, reason):
         super().__init__(reason)
         self.reason = reason
-        self.field = field
 
 
 class OrderUnavailable(Exception):
@@ -50,18 +49,18 @@ def _quote(conn, raw_cust, raw_sku, raw_qty):
         "SELECT tier,credit_lim,name FROM customers WHERE cust_no=?", (cust,)
     ).fetchone()
     if not c:
-        raise OrderRejected(INVALID_CUSTOMER, "cust_no")
+        raise OrderRejected(INVALID_CUSTOMER)
     sku = pricing.field(raw_sku, pricing.SKU_WIDTH)
     p = conn.execute(
         "SELECT descr,price_cents,stock FROM products WHERE sku=?", (sku,)
     ).fetchone()
     if not p:
-        raise OrderRejected(INVALID_SKU, "sku")
+        raise OrderRejected(INVALID_SKU)
     qty = pricing.parse_qty(raw_qty)
     if qty is None:
-        raise OrderRejected(INVALID_QTY, "qty")
+        raise OrderRejected(INVALID_QTY)
     if qty > p[2]:
-        raise OrderRejected(INSUFFICIENT_STOCK, "qty")
+        raise OrderRejected(INSUFFICIENT_STOCK)
     priced = pricing.price(p[1], qty, c[0])
     used = conn.execute(
         "SELECT COALESCE(SUM(total_cents),0) FROM orders "
