@@ -33,3 +33,26 @@ class WebTestCase(unittest.TestCase):
         conn = appdb.init(reset=True)
         conn.close()
         self.client = TestClient(app)
+
+    def query(self, sql, *args):
+        conn = appdb.connect()
+        try:
+            return conn.execute(sql, args).fetchall()
+        finally:
+            conn.close()
+
+    def execute(self, sql, *args):
+        conn = appdb.connect()
+        try:
+            conn.execute(sql, args)
+            conn.commit()
+        finally:
+            conn.close()
+
+    def snapshot(self):
+        """All order and product rows, read through a fresh connection."""
+        return (self.query("SELECT * FROM orders ORDER BY order_no"),
+                self.query("SELECT * FROM products ORDER BY sku"))
+
+    def stock(self, sku):
+        return self.query("SELECT stock FROM products WHERE sku=?", sku)[0][0]

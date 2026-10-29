@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 {% block content %}
 <h1>CUSTOMER LOOKUP</h1>
+<p><a href="/orders/new">Enter a new order</a></p>
 
 <form hx-get="/customers/lookup" hx-target="#result" hx-swap="innerHTML">
   <label>Customer no: <input name="cust_no" maxlength="8" autofocus></label>

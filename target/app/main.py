@@ -3,15 +3,14 @@
 Run locally (from target/):  python3 -m uvicorn app.main:app --port 8000
 Health:                       curl http://localhost:8000/health
 """
-import os
 from contextlib import asynccontextmanager
 
 from app import db
 from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse
-from fastapi.templating import Jinja2Templates
 
-from .routers import customers
+from .routers import customers, order_pages, orders
+from .templating import TEMPLATES
 
 
 @asynccontextmanager
@@ -22,8 +21,8 @@ async def lifespan(_app):
 
 app = FastAPI(title="ORDERSYS web", version="0.1.0", lifespan=lifespan)
 app.include_router(customers.router)
-
-TEMPLATES = Jinja2Templates(directory=os.path.join(os.path.dirname(__file__), "templates"))
+app.include_router(orders.router)
+app.include_router(order_pages.router)
 
 
 @app.get("/health")
