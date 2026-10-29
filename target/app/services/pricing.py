@@ -15,6 +15,9 @@ from dataclasses import dataclass
 CUST_WIDTH = 8
 SKU_WIDTH = 8
 QTY_WIDTH = 4
+# field() must scan every character (a later backspace can reopen a full
+# field), so raw input is capped at the HTTP boundary to bound that work.
+MAX_RAW_CHARS = 256
 
 TIER_DISCOUNT_PCT = {"S": 0, "G": 5, "P": 10}
 VOLUME_BREAK_QTY = 100

@@ -95,8 +95,11 @@ class OrderEntryWebTests(WebTestCase):
 
     def test_confirm_button_is_disabled_while_submitting(self):
         r = self.preview("C1001", "HAM-01", "3")
-        self.assertIn('hx-disabled-elt=".preview button"', r.text)
-        self.assertIn('hx-sync="this:drop"', r.text)
+        self.assertEqual(r.text.count('hx-disabled-elt="#order-entry button"'), 2)
+        page = self.client.get("/orders/new").text
+        self.assertIn('<div id="order-entry" hx-sync="this:drop">', page)
+        self.assertIn('hx-disabled-elt="#order-entry button"', page)
+        self.assertLess(page.index('id="order-entry"'), page.index('id="result"'))
 
     def test_decline_writes_nothing(self):
         before = self.snapshot()

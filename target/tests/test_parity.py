@@ -8,9 +8,11 @@ Rules for missions extending this file:
   migration-reviewer droid will catch it.
 - One legacy business rule per test, named after the rule.
 
-Already covered by the reference endpoint: customer lookup + open credit.
-TO ADD (mission workspace): pricing/discount/tax, credit-limit rejection,
-stock decrement/restock, status flow N->P->S, cancel rules, sales report.
+Covered: customer lookup + open credit (reference endpoint); order entry
+pricing/discount/tax, input width, stock check/decrement and credit-limit
+rejection (Order*ParityTests below).
+TO ADD (mission workspace): restock on cancel, status flow N->P->S, cancel
+rules, sales report.
 """
 from helpers import WebTestCase
 
@@ -185,6 +187,23 @@ class OrderInputParityTests(OrderEntryTestCase):
         r = self.order("C1001\x1b", "HAM-01\x1b", "3\x1b")
         self.assertEqual(r.status_code, 201, r.text)
         self.assertEqual((r.json()["cust_no"], r.json()["sku"], r.json()["qty"]), ("C1001", "HAM-01", 3))
+
+    def test_oversized_raw_fields_are_rejected_before_replay(self):
+        before = self.snapshot()
+        limit = pricing.MAX_RAW_CHARS
+        at_limit = self.order("C1001" + "\x08" * (limit - 5), "HAM-01", "3")
+        self.assert_rejected_without_write(at_limit, 404, "INVALID CUSTOMER")
+        int_at_limit = self.order("C1001", "NAI-04", 10 ** limit - 1)
+        self.assert_rejected_without_write(int_at_limit, 409, "INSUFFICIENT STOCK")
+        for qty in (10 ** limit, -10 ** (limit - 1)):
+            self.assertEqual(self.order("C1001", "HAM-01", qty).status_code, 422)
+        for body in ({"cust_no": "C1001" + "X" * limit, "sku": "HAM-01", "qty": "3"},
+                     {"cust_no": "C1001", "sku": "HAM-01" + "X" * limit, "qty": "3"},
+                     {"cust_no": "C1001", "sku": "HAM-01", "qty": "3" * (limit + 1)}):
+            self.assertEqual(self.client.post("/api/orders", json=body).status_code, 422)
+            for page in ("/orders/preview", "/orders/confirm"):
+                self.assertEqual(self.client.post(page, data=body).status_code, 422, page)
+        self.assertEqual(self.snapshot(), before)
 
     def test_every_rejection_reason_has_an_http_status(self):
         from app.routers.orders import REJECTION_STATUS

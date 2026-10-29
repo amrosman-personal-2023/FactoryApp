@@ -11,8 +11,8 @@
   </table>
   <p>Nothing has been saved yet. Confirm to create this order.</p>
   <form action="/orders/confirm" method="post" hx-post="/orders/confirm"
-        hx-target="#result" hx-swap="innerHTML" hx-disabled-elt=".preview button"
-        hx-sync="this:drop" class="inline">
+        hx-target="#result" hx-swap="innerHTML" hx-disabled-elt="#order-entry button"
+        class="inline">
     <input type="hidden" name="cust_no" value="{{ q.cust_no }}">
     <input type="hidden" name="sku" value="{{ q.sku }}">
     <input type="hidden" name="qty" value="{{ q.qty }}">
@@ -20,7 +20,7 @@
     <button type="submit">Confirm order</button>
   </form>
   <form action="/orders/decline" method="post" hx-post="/orders/decline"
-        hx-target="#result" hx-swap="innerHTML" hx-disabled-elt=".preview button" class="inline">
+        hx-target="#result" hx-swap="innerHTML" hx-disabled-elt="#order-entry button" class="inline">
     <button type="submit">Decline</button>
   </form>
 </section>

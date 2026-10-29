@@ -2,8 +2,13 @@
 {% block content %}
 <h1>ORDER ENTRY</h1>
 
+<!-- One request queue for every order form on the page: while a preview,
+     confirm or decline is in flight, further submissions are dropped, so a
+     late response can never replace an ORDER CREATED confirmation. -->
+<div id="order-entry" hx-sync="this:drop">
 <form id="entry-form" action="/orders/preview" method="post"
-      hx-post="/orders/preview" hx-target="#result" hx-swap="innerHTML">
+      hx-post="/orders/preview" hx-target="#result" hx-swap="innerHTML"
+      hx-disabled-elt="#order-entry button">
   <p><label for="cust_no">Customer no</label>
      <input id="cust_no" name="cust_no" maxlength="8" autocomplete="off" autofocus
             value="{{ form.cust_no or '' }}"></p>
@@ -17,5 +22,6 @@
 
 <div id="result" aria-live="polite">
   {% if result_template %}{% include result_template %}{% endif %}
+</div>
 </div>
 {% endblock %}

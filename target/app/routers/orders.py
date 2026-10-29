@@ -5,13 +5,13 @@ are always computed server-side. Money is returned as integer cents. Every
 field, including an integer qty, goes through the legacy field-width rules,
 so qty 12345 is read as 1234 exactly as the four-character terminal field did.
 """
-from typing import Union
+from typing import Annotated, Union
 
 from fastapi import APIRouter
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel, StrictInt, StrictStr
+from pydantic import BaseModel, Field, StrictInt, StrictStr, StringConstraints
 
-from app.services import orders
+from app.services import orders, pricing
 
 router = APIRouter(prefix="/api/orders", tags=["orders"])
 
@@ -25,10 +25,16 @@ REJECTION_STATUS = {
 }
 
 
+RawField = Annotated[StrictStr, StringConstraints(max_length=pricing.MAX_RAW_CHARS)]
+# An integer qty is replayed as its decimal text, so it gets the same bound.
+RawInt = Annotated[StrictInt, Field(gt=-10 ** (pricing.MAX_RAW_CHARS - 1),
+                                    lt=10 ** pricing.MAX_RAW_CHARS)]
+
+
 class OrderRequest(BaseModel):
-    cust_no: StrictStr
-    sku: StrictStr
-    qty: Union[StrictStr, StrictInt]
+    cust_no: RawField
+    sku: RawField
+    qty: Union[RawField, RawInt]
 
 
 def quote_body(quote):

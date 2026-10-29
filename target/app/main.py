@@ -4,6 +4,7 @@ Run locally (from target/):  python3 -m uvicorn app.main:app --port 8000
 Health:                       curl http://localhost:8000/health
 """
 from contextlib import asynccontextmanager
+from typing import Annotated
 
 from app import db
 from fastapi import FastAPI, Form, Request
@@ -11,6 +12,7 @@ from fastapi.responses import HTMLResponse
 
 from .routers import customers, orders
 from .services import orders as order_service
+from .services import pricing
 from .templating import TEMPLATES
 
 
@@ -79,6 +81,9 @@ def customer_lookup_fragment(request: Request, cust_no: str = ""):
 # reservation, and a price change after preview is saved at the current price
 # and reported on the success screen.
 
+RawFormField = Annotated[str, Form(max_length=pricing.MAX_RAW_CHARS)]
+
+
 def _order_render(request, fragment, context, status_code=200):
     """HTMX gets the fragment; a plain form post gets the full page around it."""
     if request.headers.get("HX-Request") == "true":
@@ -99,8 +104,8 @@ def order_entry_page(request: Request):
 
 
 @app.post("/orders/preview", response_class=HTMLResponse)
-def order_preview(request: Request, cust_no: str = Form(""), sku: str = Form(""),
-                  qty: str = Form("")):
+def order_preview(request: Request, cust_no: RawFormField = "", sku: RawFormField = "",
+                  qty: RawFormField = ""):
     form = {"cust_no": cust_no, "sku": sku, "qty": qty}
     try:
         quote = order_service.preview_order(cust_no, sku, qty)
@@ -110,8 +115,8 @@ def order_preview(request: Request, cust_no: str = Form(""), sku: str = Form("")
 
 
 @app.post("/orders/confirm", response_class=HTMLResponse)
-def order_confirm(request: Request, cust_no: str = Form(""), sku: str = Form(""),
-                  qty: str = Form(""), preview_total_cents: str = Form("")):
+def order_confirm(request: Request, cust_no: RawFormField = "", sku: RawFormField = "",
+                  qty: RawFormField = "", preview_total_cents: str = Form("")):
     form = {"cust_no": cust_no, "sku": sku, "qty": qty}
     try:
         order_no, quote, repriced = order_service.confirm_order(
