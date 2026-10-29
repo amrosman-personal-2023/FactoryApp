@@ -11,8 +11,8 @@ Rules for missions extending this file:
 Covered: customer lookup + open credit (reference endpoint); order entry
 pricing/discount/tax, input width, stock check/decrement and credit-limit
 rejection (Order*ParityTests below); order list order, status flow N->P->S,
-cancel rules and restock on cancel (OrderList/OrderStatusFlow ParityTests).
-TO ADD (mission workspace): sales report.
+cancel rules and restock on cancel (OrderList/OrderStatusFlow ParityTests);
+sales report rows, cancelled exclusion and grand total (SalesReportParityTests).
 """
 from helpers import WebTestCase
 
@@ -533,3 +533,163 @@ class OrderStatusFlowParityTests(OrderLifecycleTestCase):
         twin.order_list(self.legacy_downs(1), "C")
         self.assertEqual(self.act(1, "cancel").status_code, 200)
         self.assertEqual(self.snapshot(), twin.snapshot())
+
+
+# ---------------------------------------------------------------------------
+# Sales report parity (legacy report_screen). Pinned values come from the
+# frozen ReportTests; every other fixture is compared against the real legacy
+# handler run on an identical copy of the database (LegacyTwin.report).
+# ---------------------------------------------------------------------------
+LEGACY_REPORT_ROW = re.compile(r"^(.+?)\s+(\d+)\s+(-?\d+\.\d\d)$")
+LEGACY_GRAND_TOTAL = re.compile(r"^GRAND TOTAL\s+(-?\d+\.\d\d)$")
+
+
+def legacy_report(screen_text):
+    """([(name, count, sales text)], grand total text) as the legacy report drew them."""
+    rows, grand = [], None
+    for line in screen_text.split("\n"):
+        g = LEGACY_GRAND_TOTAL.match(line)
+        if g:
+            grand = g.group(1)
+            continue
+        m = LEGACY_REPORT_ROW.match(line)
+        if m:
+            rows.append((m.group(1), int(m.group(2)), m.group(3)))
+    return rows, grand
+
+
+def cents_text(cents):
+    """Cents as the legacy %.2f dollar text, including the sign of negative totals."""
+    sign = "-" if cents < 0 else ""
+    return "%s%d.%02d" % ((sign,) + divmod(abs(cents), 100))
+
+
+class SalesReportParityTests(OrderLifecycleTestCase):
+    def report(self):
+        r = self.client.get("/api/reports/sales")
+        self.assertEqual(r.status_code, 200, r.text)
+        return r.json()
+
+    def assert_report_matches_legacy(self, ties_in_any_order=False):
+        legacy_rows_, legacy_grand = legacy_report(self.twin().report())
+        body = self.report()
+        target_rows = [(row["name"], row["order_count"], cents_text(row["sales_cents"]))
+                       for row in body["rows"]]
+        if ties_in_any_order:
+            # Legacy sorts by sales only, so the order of equal-sales rows is unspecified.
+            self.assertEqual([r[2] for r in target_rows], [r[2] for r in legacy_rows_])
+            self.assertEqual(sorted(target_rows), sorted(legacy_rows_))
+        else:
+            self.assertEqual(target_rows, legacy_rows_)
+        self.assertEqual(cents_text(body["grand_total_cents"]), legacy_grand)
+        return body
+
+    def test_zero_order_customer_still_listed(self):
+        # legacy test_zero_order_customer_still_listed: C1004 has only a cancelled order
+        body = self.assert_report_matches_legacy()
+        delta = [row for row in body["rows"] if row["cust_no"] == "C1004"]
+        self.assertEqual(delta, [{"cust_no": "C1004", "name": "DELTA TOOLWORKS",
+                                  "order_count": 0, "sales_cents": 0}])
+
+    def test_grand_total_excludes_cancelled(self):
+        # legacy test_grand_total_excludes_cancelled: 4218 + 5090 + 56412 = 65720
+        body = self.assert_report_matches_legacy()
+        self.assertEqual(body["grand_total_cents"], 65720)
+
+    def test_seed_rows_sorted_by_descending_sales_match_legacy(self):
+        body = self.assert_report_matches_legacy()
+        self.assertEqual([(row["cust_no"], row["order_count"], row["sales_cents"])
+                          for row in body["rows"]],
+                         [("C1003", 1, 56412), ("C1002", 1, 5090), ("C1001", 1, 4218),
+                          ("C1004", 0, 0)])
+
+    def test_report_money_is_integer_cents(self):
+        body = self.report()
+        self.assertIs(type(body["grand_total_cents"]), int)
+        for row in body["rows"]:
+            self.assertIs(type(row["sales_cents"]), int)
+            self.assertIs(type(row["order_count"]), int)
+
+    def test_customer_with_no_orders_at_all_is_listed_once(self):
+        # Filtering status after the outer join would drop this row.
+        self.execute("DELETE FROM orders WHERE cust_no='C1004'")
+        body = self.assert_report_matches_legacy()
+        self.assertEqual([row for row in body["rows"] if row["cust_no"] == "C1004"],
+                         [{"cust_no": "C1004", "name": "DELTA TOOLWORKS",
+                           "order_count": 0, "sales_cents": 0}])
+        self.assertEqual(body["grand_total_cents"], 65720)
+
+    def test_all_zero_report_retains_every_customer(self):
+        self.execute("DELETE FROM orders")
+        body = self.assert_report_matches_legacy(ties_in_any_order=True)
+        self.assertEqual(sorted((row["cust_no"], row["order_count"], row["sales_cents"])
+                                for row in body["rows"]),
+                         [("C1001", 0, 0), ("C1002", 0, 0), ("C1003", 0, 0), ("C1004", 0, 0)])
+        self.assertEqual(body["grand_total_cents"], 0)
+
+    def test_equal_sales_rows_are_ordered_by_customer_number(self):
+        # DELTA's seed order (stored 9741) reopened at ACME's stored 4218 ties the two rows.
+        self.execute("UPDATE orders SET status='N', total_cents=4218 WHERE order_no=4")
+        body = self.assert_report_matches_legacy(ties_in_any_order=True)
+        self.assertEqual([row["cust_no"] for row in body["rows"]],
+                         ["C1003", "C1002", "C1001", "C1004"])
+        # A name that sorts last but a number that sorts first: the tie-break is cust_no.
+        self.execute("INSERT INTO customers VALUES ('C0999','ZZ LAST CO','TYLER','S',100)")
+        self.execute("INSERT INTO orders (cust_no,sku,qty,total_cents,status) "
+                     "VALUES ('C0999','HAM-01',3,4218,'N')")
+        body = self.assert_report_matches_legacy(ties_in_any_order=True)
+        self.assertEqual([row["cust_no"] for row in body["rows"]],
+                         ["C1003", "C1002", "C0999", "C1001", "C1004"])
+        self.execute("DELETE FROM orders")
+        self.assertEqual([row["cust_no"] for row in self.report()["rows"]],
+                         ["C0999", "C1001", "C1002", "C1003", "C1004"])
+
+    def test_orders_for_unknown_customers_are_not_reported(self):
+        self.execute("INSERT INTO orders (cust_no,sku,qty,total_cents,status) "
+                     "VALUES ('C9999','HAM-01',1,1407,'N')")
+        body = self.assert_report_matches_legacy()
+        self.assertNotIn("C9999", [row["cust_no"] for row in body["rows"]])
+        self.assertEqual(body["grand_total_cents"], 65720)
+
+    def test_only_cancelled_orders_is_an_all_zero_report(self):
+        self.execute("UPDATE orders SET status='C'")
+        body = self.assert_report_matches_legacy()
+        self.assertEqual(len(body["rows"]), 4)
+        self.assertEqual({row["sales_cents"] for row in body["rows"]}, {0})
+        self.assertEqual(body["grand_total_cents"], 0)
+
+    def test_new_picked_and_shipped_orders_count_cancelled_do_not(self):
+        for status in ("N", "P", "S", "C"):
+            with self.subTest(status=status):
+                appdb.init(reset=True).close()
+                self.execute("INSERT INTO orders (cust_no,sku,qty,total_cents,status) "
+                             "VALUES ('C1004','DRL-03',1,9741,?)", status)
+                body = self.assert_report_matches_legacy()
+                delta = [row for row in body["rows"] if row["cust_no"] == "C1004"][0]
+                counted = status != "C"
+                self.assertEqual((delta["order_count"], delta["sales_cents"]),
+                                 (1, 9741) if counted else (0, 0))
+                self.assertEqual(body["grand_total_cents"], 65720 + (9741 if counted else 0))
+
+    def test_report_sums_stored_totals_without_repricing(self):
+        self.execute("UPDATE orders SET total_cents=1 WHERE order_no=1")
+        self.execute("UPDATE products SET price_cents=99999")
+        body = self.assert_report_matches_legacy()
+        acme = [row for row in body["rows"] if row["cust_no"] == "C1001"][0]
+        self.assertEqual(acme["sales_cents"], 1)
+
+    def test_report_follows_create_ship_and_cancel_like_legacy(self):
+        created = self.order("C1001", "HAM-01", "3").json()
+        self.assert_report_matches_legacy()
+        for action in ("pick", "ship"):
+            self.assertEqual(self.act(created["order_no"], action).status_code, 200)
+            self.assert_report_matches_legacy()
+        self.assertEqual(self.act(2, "cancel").status_code, 200)
+        body = self.assert_report_matches_legacy()
+        self.assertEqual(body["grand_total_cents"], 65720 + created["total_cents"] - 5090)
+
+    def test_report_read_writes_nothing(self):
+        before = self.snapshot()
+        self.report()
+        self.client.get("/reports/sales")
+        self.assertEqual(self.snapshot(), before)

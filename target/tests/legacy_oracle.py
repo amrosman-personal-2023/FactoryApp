@@ -39,6 +39,10 @@ class LegacyTwin:
         script = [curses.KEY_DOWN] * downs + keys(letters) + [ESC]
         return self.run(ordersys.order_list_screen, script)
 
+    def report(self):
+        """Legacy report_screen: draw the report, then ESC."""
+        return self.run(ordersys.report_screen, [ESC])
+
     def run(self, handler, script):
         scr = FakeScreen(script)
         opened = []

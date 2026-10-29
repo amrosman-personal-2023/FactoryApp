@@ -81,3 +81,18 @@ class SmokeTests(WebTestCase):
         r = self.client.post("/api/orders", json={"cust_no": "C1001", "sku": "HAM-01", "qty": "3"})
         self.assertEqual(r.status_code, 201)
         self.assertEqual(r.json()["order_no"], 5)
+
+    def test_sales_report_page_renders(self):
+        r = self.client.get("/reports/sales")
+        self.assertEqual(r.status_code, 200)
+        self.assertIn("SALES REPORT", r.text)
+        self.assertIn("GRAND TOTAL", r.text)
+
+    def test_customers_page_links_to_sales_report(self):
+        r = self.client.get("/customers")
+        self.assertIn('href="/reports/sales"', r.text)
+
+    def test_sales_report_api_end_to_end(self):
+        r = self.client.get("/api/reports/sales")
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(r.json()["grand_total_cents"], 65720)

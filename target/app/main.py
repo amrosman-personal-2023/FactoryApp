@@ -10,8 +10,8 @@ from app import db
 from fastapi import FastAPI, Form, Request
 from fastapi.responses import HTMLResponse
 
-from .routers import customers, order_lifecycle, orders
-from .services import lifecycle
+from .routers import customers, order_lifecycle, orders, reports
+from .services import lifecycle, report
 from .services import orders as order_service
 from .services import pricing
 from .templating import TEMPLATES
@@ -27,6 +27,7 @@ app = FastAPI(title="ORDERSYS web", version="0.1.0", lifespan=lifespan)
 app.include_router(customers.router)
 app.include_router(orders.router)
 app.include_router(order_lifecycle.router)
+app.include_router(reports.router)
 
 
 @app.get("/health")
@@ -169,3 +170,21 @@ def order_action(request: Request, order_no: order_lifecycle.OrderNo,
                       "current": exc.order},
             status_code=order_lifecycle.LIFECYCLE_STATUS[exc.reason])
     return _order_list_render(request, {"done": order, "action": action})
+
+
+# Sales report page: the same report service as GET /api/reports/sales,
+# formatted as dollars. The Refresh link re-reads it via HTMX.
+
+@app.get("/reports/sales", response_class=HTMLResponse)
+def sales_report_page(request: Request):
+    status_code = 200
+    try:
+        context = {"report": report.sales_report()}
+    except report.ReportUnavailable as exc:
+        context, status_code = {"unavailable": exc.reason}, 503
+    template = ("sales_report_fragment.html" if request.headers.get("HX-Request") == "true"
+                else "sales_report.html")
+    response = TEMPLATES.TemplateResponse(request, template, context, status_code=status_code)
+    # One URL serves the full page and the HTMX fragment; caches must keep them apart.
+    response.headers["Vary"] = "HX-Request"
+    return response
