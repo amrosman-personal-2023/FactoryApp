@@ -96,3 +96,17 @@ class SmokeTests(WebTestCase):
         r = self.client.get("/api/reports/sales")
         self.assertEqual(r.status_code, 200)
         self.assertEqual(r.json()["grand_total_cents"], 65720)
+
+    def test_customer_search_page_renders(self):
+        r = self.client.get("/customers/search")
+        self.assertEqual(r.status_code, 200)
+        self.assertIn("CUSTOMER NAME SEARCH", r.text)
+
+    def test_customers_page_links_to_customer_search(self):
+        r = self.client.get("/customers")
+        self.assertIn('href="/customers/search"', r.text)
+
+    def test_customer_search_api_end_to_end(self):
+        r = self.client.get("/api/search/customers", params={"name": "ACME"})
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual([c["cust_no"] for c in r.json()["customers"]], ["C1001"])

@@ -1,0 +1,21 @@
+{% if unavailable %}
+<p class="error" role="alert"><strong>{{ unavailable }}</strong> - the search could not be run.</p>
+{% elif result.blank %}
+<p id="search-blank">Enter part of a customer name, then choose Search.</p>
+{% elif not result.matches %}
+<p id="search-no-matches"><strong>NO MATCHES</strong> for &ldquo;{{ result.term }}&rdquo;.</p>
+{% else %}
+<table id="search-table">
+  <caption>Customers whose name contains &ldquo;{{ result.term }}&rdquo;</caption>
+  <thead>
+    <tr><th scope="col">No</th><th scope="col">Name</th><th scope="col">City</th></tr>
+  </thead>
+  <tbody>
+  {% for m in result.matches %}
+    <tr class="search-match" data-cust-no="{{ m.cust_no }}">
+      <td>{{ m.cust_no }}</td><td>{{ m.name }}</td><td>{{ m.city }}</td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% endif %}

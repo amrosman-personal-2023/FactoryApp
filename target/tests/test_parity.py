@@ -12,7 +12,9 @@ Covered: customer lookup + open credit (reference endpoint); order entry
 pricing/discount/tax, input width, stock check/decrement and credit-limit
 rejection (Order*ParityTests below); order list order, status flow N->P->S,
 cancel rules and restock on cancel (OrderList/OrderStatusFlow ParityTests);
-sales report rows, cancelled exclusion and grand total (SalesReportParityTests).
+sales report rows, cancelled exclusion and grand total (SalesReportParityTests);
+customer name search width, wildcards, twelve-row cap and the injection fix
+(CustomerSearchParityTests).
 """
 from helpers import WebTestCase
 
@@ -693,3 +695,192 @@ class SalesReportParityTests(OrderLifecycleTestCase):
         self.report()
         self.client.get("/reports/sales")
         self.assertEqual(self.snapshot(), before)
+
+
+# ---------------------------------------------------------------------------
+# Customer name search parity (legacy search_screen). ACME/CONTOSO come from
+# the frozen SearchTests; every other fixture is compared against the real
+# legacy handler run on an identical copy of the database (LegacyTwin.search).
+# The one intentional difference is the injection fix, which is not compared.
+# ---------------------------------------------------------------------------
+from unittest import mock  # noqa: E402
+
+from app.services import search  # noqa: E402
+
+INJECTION = "' OR '1'='1"   # legacy SearchTests.test_sql_injection_present_in_legacy
+
+
+def legacy_search_lines(customers):
+    """The result-area lines the legacy screen draws for these API customers."""
+    if not customers:
+        return ["NO MATCHES"]
+    return ["%-7s %-22s %s" % (c["cust_no"], c["name"], c["city"]) for c in customers]
+
+
+class RecordingConnection:
+    """Passes every statement through to SQLite and records its text and parameters."""
+
+    def __init__(self, conn, log):
+        self.conn, self.log = conn, log
+
+    def execute(self, sql, params=()):
+        self.log.append((sql, params))
+        return self.conn.execute(sql, params)
+
+    def close(self):
+        self.conn.close()
+
+
+class CustomerSearchParityTests(OrderEntryTestCase):
+    def search(self, name):
+        r = self.client.get("/api/search/customers", params={"name": name})
+        self.assertEqual(r.status_code, 200, r.text)
+        return r.json()
+
+    def tuples(self, body):
+        return [(c["cust_no"], c["name"], c["city"]) for c in body["customers"]]
+
+    def assert_search_matches_legacy(self, name):
+        legacy = self.twin().search(name)
+        body = self.search(name)
+        self.assertEqual(legacy_search_lines(body["customers"]), legacy, name)
+        return body
+
+    def add_customers(self, *rows):
+        for cust_no, name, city in rows:
+            self.execute("INSERT INTO customers VALUES (?,?,?,'S',1000)", cust_no, name, city)
+
+    def test_name_search(self):
+        # legacy test_name_search: ACME finds ACME HARDWARE and not CONTOSO
+        body = self.assert_search_matches_legacy("ACME")
+        self.assertEqual(self.tuples(body), [("C1001", "ACME HARDWARE", "DALLAS")])
+        self.assertNotIn("CONTOSO", str(body))
+
+    def test_interior_substring_of_name_matches_legacy(self):
+        self.assertEqual(self.tuples(self.assert_search_matches_legacy("HARD")),
+                         [("C1001", "ACME HARDWARE", "DALLAS")])
+        self.assertEqual(self.tuples(self.assert_search_matches_legacy("SUPP")),
+                         [("C1003", "CONTOSO SUPPLY", "HOUSTON")])
+        self.assertEqual([c["cust_no"] for c in self.assert_search_matches_legacy("O")["customers"]],
+                         ["C1003", "C1004"])
+
+    def test_city_and_customer_number_are_not_searched(self):
+        for term in ("DALLAS", "C1001", "1001"):
+            with self.subTest(term=term):
+                self.assertEqual(self.assert_search_matches_legacy(term)["customers"], [])
+
+    def test_input_is_uppercased(self):
+        body = self.assert_search_matches_legacy("acme")
+        self.assertEqual(body["term"], "ACME")
+        self.assertEqual(self.tuples(body), [("C1001", "ACME HARDWARE", "DALLAS")])
+        self.assertEqual(search.normalize("hard ware"), "HARD WARE")
+
+    def test_twenty_character_name_field_matches_legacy(self):
+        self.add_customers(("W2001", "ABCDEFGHIJKLMNOPQRST", "WIDTHVILLE"))
+        for term in ("ABCDEFGHIJKLMNOPQRST", "ABCDEFGHIJKLMNOPQRSTZ", "abcdefghijklmnopqrstZZZZ"):
+            with self.subTest(term=term):
+                body = self.assert_search_matches_legacy(term)
+                self.assertEqual(body["term"], "ABCDEFGHIJKLMNOPQRST")
+                self.assertEqual(self.tuples(body),
+                                 [("W2001", "ABCDEFGHIJKLMNOPQRST", "WIDTHVILLE")])
+
+    def test_at_most_twelve_matches_in_table_order_match_legacy(self):
+        # Inserted in descending number order, so table order is not cust_no order.
+        self.add_customers(*[("L%02d" % n, "LIMITCHECK %02d" % n, "CITY %02d" % n)
+                             for n in range(13, 0, -1)])
+        body = self.assert_search_matches_legacy("LIMITCHECK")
+        found = self.tuples(body)
+        self.assertEqual(len(found), 12)
+        self.assertEqual(len(set(found)), 12)
+        self.assertEqual([c[0] for c in found], ["L%02d" % n for n in range(13, 1, -1)])
+        self.execute("DELETE FROM customers WHERE cust_no='L01'")
+        self.assertEqual(len(self.assert_search_matches_legacy("LIMITCHECK")["customers"]), 12)
+        self.execute("DELETE FROM customers WHERE cust_no='L02'")
+        self.assertEqual(len(self.assert_search_matches_legacy("LIMITCHECK")["customers"]), 11)
+
+    def test_like_wildcards_remain_active_matches_legacy(self):
+        self.add_customers(("K0", "WILDAB", "ZERO"), ("K1", "WILDAXB", "ONE"),
+                           ("K2", "WILDAXXB", "TWO"))
+        matrix = {"WILDA_B": ["K1"], "WILDA%B": ["K0", "K1", "K2"], "WILDA__B": ["K2"],
+                  "WILDAB": ["K0"], "W_LD": ["K0", "K1", "K2"]}
+        for term, expected in matrix.items():
+            with self.subTest(term=term):
+                body = self.assert_search_matches_legacy(term)
+                self.assertEqual([c["cust_no"] for c in body["customers"]], expected)
+        self.assertEqual(len(self.assert_search_matches_legacy("%")["customers"]), 7)
+        self.assertEqual(len(self.assert_search_matches_legacy("_")["customers"]), 7)
+
+    def test_no_matches_matches_legacy(self):
+        body = self.assert_search_matches_legacy("ZZZNOMATCH")
+        self.assertEqual(body, {"term": "ZZZNOMATCH", "customers": []})
+
+    def test_blank_search_lists_nobody_like_legacy(self):
+        # Legacy returned to the menu on a blank term, drawing no rows.
+        for raw in ("", "\x01", "\n ACME", "AB\x08\x08"):
+            with self.subTest(raw=raw):
+                self.assertEqual(self.twin().search(raw), [])
+                self.assertEqual(self.search(raw), {"term": "", "customers": []})
+        r = self.client.get("/api/search/customers")
+        self.assertEqual((r.status_code, r.json()), (200, {"term": "", "customers": []}))
+
+    def test_typed_exit_leaves_without_searching_like_legacy(self):
+        self.add_customers(("X1", "EXIT SUPPLY", "TYLER"))
+        for raw in ("EXIT", "exit"):
+            with self.subTest(raw=raw):
+                self.assertEqual(self.twin().search(raw), [])
+                self.assertEqual(self.search(raw), {"term": "", "customers": []})
+        self.assertEqual(self.tuples(self.assert_search_matches_legacy("EXIT ")),
+                         [("X1", "EXIT SUPPLY", "TYLER")])
+
+    def test_escape_character_is_ignored_text_not_a_back_key(self):
+        # Intentional difference shared with order entry: legacy ESC left the screen.
+        self.assertEqual(self.twin().search("\x1bACME"), [])
+        self.assertEqual(self.tuples(self.search("\x1bACME")), [("C1001", "ACME HARDWARE", "DALLAS")])
+
+    def test_control_keys_replay_like_legacy_prompt(self):
+        # ENTER ends the field; BS/DEL remove the previous character.
+        for raw in ("ACME\nCONTOSO", "ACMX\x7fE", "CON\x08\x08\x08ACME"):
+            with self.subTest(raw=raw):
+                body = self.assert_search_matches_legacy(raw)
+                self.assertEqual(self.tuples(body), [("C1001", "ACME HARDWARE", "DALLAS")])
+
+    def test_sql_injection_payload_is_data(self):
+        # Intentional difference: legacy listed every customer for this payload.
+        before = (self.query("SELECT * FROM customers ORDER BY cust_no"), self.snapshot())
+        for payload in (INJECTION, "'; DROP TABLE customers; --", '" OR ""="'):
+            with self.subTest(payload=payload):
+                self.assertEqual(self.search(payload)["customers"], [])
+        self.assertEqual((self.query("SELECT * FROM customers ORDER BY cust_no"), self.snapshot()),
+                         before)
+        self.assertEqual(self.tuples(self.search("ACME")), [("C1001", "ACME HARDWARE", "DALLAS")])
+
+    def test_quote_in_name_is_searchable(self):
+        # Legacy raised a SQL syntax error for any term containing a quote.
+        self.add_customers(("Q1", "O'BRIEN SUPPLY", "WACO"))
+        self.assertEqual(self.tuples(self.search("o'brien")), [("Q1", "O'BRIEN SUPPLY", "WACO")])
+
+    def test_search_sql_is_fixed_text_with_a_bound_pattern(self):
+        log, connect = [], appdb.connect
+        with mock.patch.object(appdb, "connect", lambda: RecordingConnection(connect(), log)):
+            self.search(INJECTION)
+            self.search("acme")
+        self.assertEqual([sql for sql, _ in log], [search._SEARCH_SQL] * 2)
+        self.assertEqual([params for _, params in log],
+                         [("%" + INJECTION + "%", 12), ("%ACME%", 12)])
+        self.assertNotIn("'", search._SEARCH_SQL)
+
+    def test_oversized_raw_name_is_rejected_before_replay(self):
+        limit = pricing.MAX_RAW_CHARS
+        at_limit = "ACME\n" + "X" * (limit - 5)
+        self.assertEqual(self.tuples(self.search(at_limit)), [("C1001", "ACME HARDWARE", "DALLAS")])
+        over = self.client.get("/api/search/customers", params={"name": at_limit + "X"})
+        self.assertEqual(over.status_code, 422)
+        page = self.client.get("/customers/search", params={"name": at_limit + "X"})
+        self.assertEqual(page.status_code, 422)
+
+    def test_search_read_writes_nothing(self):
+        before = (self.query("SELECT * FROM customers ORDER BY cust_no"), self.snapshot())
+        self.search("ACME")
+        self.client.get("/customers/search", params={"name": "ACME"})
+        self.assertEqual((self.query("SELECT * FROM customers ORDER BY cust_no"), self.snapshot()),
+                         before)

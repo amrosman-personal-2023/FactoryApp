@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>CUSTOMER NAME SEARCH</h1>
+<p>Finds customers whose name contains the text you enter. Up to twelve matches are shown.</p>
+
+<!-- hx-sync replace: a newer search aborts an older one, so a late response
+     can never overwrite the latest results. -->
+<form id="customer-search" action="/customers/search" method="get"
+      hx-get="/customers/search" hx-target="#search-results" hx-swap="innerHTML"
+      hx-sync="this:replace">
+  <label for="name">Name contains:</label>
+  <input id="name" name="name" maxlength="20" value="{{ result.term if result else term }}"
+         autocomplete="off" autofocus>
+  <button type="submit">Search</button>
+</form>
+
+<div id="search-results" aria-live="polite">
+  {% include "customer_search_fragment.html" %}
+</div>
+{% endblock %}

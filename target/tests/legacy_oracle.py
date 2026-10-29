@@ -22,6 +22,18 @@ import ordersys  # noqa: E402
 from app import db as appdb  # noqa: E402
 
 
+class RowScreen(FakeScreen):
+    """FakeScreen that also records the screen row each text was drawn on."""
+
+    def __init__(self, script):
+        super().__init__(script)
+        self.drawn = []
+
+    def addstr(self, y, x, text, attr=0):
+        super().addstr(y, x, text, attr)
+        self.drawn.append((y, text))
+
+
 class LegacyTwin:
     """A legacy-side copy of the current target database file."""
 
@@ -43,8 +55,20 @@ class LegacyTwin:
         """Legacy report_screen: draw the report, then ESC."""
         return self.run(ordersys.report_screen, [ESC])
 
+    def search(self, term):
+        """Legacy search_screen: the lines it drew in its result area, top to bottom.
+
+        Results start on row 5, one per row, at most twelve; "NO MATCHES"
+        also goes on row 5. A blank term returns before drawing any.
+        """
+        scr = self.run_screen(ordersys.search_screen, keys(term) + [ENTER, ord(" ")], RowScreen)
+        return [text for y, text in scr.drawn if 5 <= y < 17]
+
     def run(self, handler, script):
-        scr = FakeScreen(script)
+        return self.run_screen(handler, script).text
+
+    def run_screen(self, handler, script, screen=FakeScreen):
+        scr = screen(script)
         opened = []
 
         def connect():
@@ -59,7 +83,7 @@ class LegacyTwin:
         finally:
             for conn in opened:
                 conn.close()
-        return scr.text
+        return scr
 
     def snapshot(self):
         conn = sqlite3.connect(self.path)

@@ -7,11 +7,12 @@ from contextlib import asynccontextmanager
 from typing import Annotated
 
 from app import db
-from fastapi import FastAPI, Form, Request
+from fastapi import FastAPI, Form, Query, Request
 from fastapi.responses import HTMLResponse
 
 from .routers import customers, order_lifecycle, orders, reports
-from .services import lifecycle, report
+from .routers import search as search_api
+from .services import lifecycle, report, search
 from .services import orders as order_service
 from .services import pricing
 from .templating import TEMPLATES
@@ -28,6 +29,7 @@ app.include_router(customers.router)
 app.include_router(orders.router)
 app.include_router(order_lifecycle.router)
 app.include_router(reports.router)
+app.include_router(search_api.router)
 
 
 @app.get("/health")
@@ -186,5 +188,25 @@ def sales_report_page(request: Request):
                 else "sales_report.html")
     response = TEMPLATES.TemplateResponse(request, template, context, status_code=status_code)
     # One URL serves the full page and the HTMX fragment; caches must keep them apart.
+    response.headers["Vary"] = "HX-Request"
+    return response
+
+
+# Customer name search page: the same search service as
+# GET /api/search/customers. The form searches via HTMX and also works as a
+# plain GET without JavaScript.
+
+@app.get("/customers/search", response_class=HTMLResponse)
+def customer_search_page(request: Request,
+                         name: Annotated[str, Query(max_length=pricing.MAX_RAW_CHARS)] = ""):
+    status_code = 200
+    try:
+        context = {"result": search.search_customers(name)}
+    except search.SearchUnavailable as exc:
+        context = {"result": None, "term": search.normalize(name), "unavailable": exc.reason}
+        status_code = 503
+    template = ("customer_search_fragment.html" if request.headers.get("HX-Request") == "true"
+                else "customer_search.html")
+    response = TEMPLATES.TemplateResponse(request, template, context, status_code=status_code)
     response.headers["Vary"] = "HX-Request"
     return response
