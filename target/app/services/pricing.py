@@ -10,6 +10,7 @@ Legacy computes discount and tax with floats and int(); the integer floor
 division below yields the same cents for non-negative amounts without
 introducing floats (pinned by test_parity.OrderPricingParityTests).
 """
+
 from dataclasses import dataclass
 
 CUST_WIDTH = 8
@@ -22,7 +23,7 @@ MAX_RAW_CHARS = 256
 TIER_DISCOUNT_PCT = {"S": 0, "G": 5, "P": 10}
 VOLUME_BREAK_QTY = 100
 VOLUME_BREAK_PCT = 3
-TAX_RATE_BASIS_POINTS = 825   # 8.25%
+TAX_RATE_BASIS_POINTS = 825  # 8.25%
 
 
 @dataclass(frozen=True)

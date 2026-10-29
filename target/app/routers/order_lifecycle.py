@@ -5,6 +5,7 @@ GET /api/orders lists every order newest first; POST
 integer cents. An action that does not apply to the current status changes
 nothing and answers 409 with the unchanged order.
 """
+
 from typing import Annotated, Literal
 
 from fastapi import APIRouter, Path
@@ -21,9 +22,12 @@ LIFECYCLE_STATUS = {
     lifecycle.LIST_UNAVAILABLE: 503,
 }
 
-Action = Literal[lifecycle.ACTIONS]
+# mypy cannot evaluate Literal[...] from a runtime tuple, so the allowed
+# actions are spelled out here; test_parity asserts they stay in sync with
+# lifecycle.ACTIONS.
+Action = Literal["pick", "ship", "cancel"]
 # SQLite INTEGER is 64-bit; binding a larger value raises OverflowError.
-OrderNo = Annotated[int, Path(ge=1, le=2 ** 63 - 1)]
+OrderNo = Annotated[int, Path(ge=1, le=2**63 - 1)]
 
 
 def order_body(order):

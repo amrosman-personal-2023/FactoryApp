@@ -103,7 +103,7 @@ Run every check from the repository root:
 ./run_checks.sh
 ```
 
-It runs the legacy characterization tests and then the target smoke, parity, web and launcher tests, and exits non-zero if either suite fails or if FastAPI is not installed. To run only the target tests:
+It runs ruff lint, a format check and mypy on the target app, then the legacy characterization tests and then the target smoke, parity, web and launcher tests, and exits non-zero if any step fails or if FastAPI is not installed. To run only the target tests:
 
 ```sh
 cd target

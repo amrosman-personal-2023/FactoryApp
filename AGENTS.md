@@ -19,7 +19,7 @@ Demo: migrate ORDERSYS, a legacy green-screen (curses) order-entry app, to a mod
 - Seed legacy DB: `cd legacy && python3 -I db.py`
 - Run legacy app: `cd legacy && python3 ordersys.py` (needs a real terminal; F-keys: F3 exit, F5 refresh, F12 back)
 - Run web app: `cd target && python3 -m uvicorn app.main:app --port 8000` (then open http://localhost:8000/customers; API at /api/customers/{cust_no}; health at /health)
-- ALL CHECKS: `./run_checks.sh` - runs legacy characterization tests + target smoke/parity tests. A milestone is complete only when this exits 0.
+- ALL CHECKS: `./run_checks.sh` - runs ruff lint + format check + mypy on target/ + legacy characterization tests + target smoke/parity tests. A milestone is complete only when this exits 0.
 
 ## Business rules that MUST be preserved (see `order_entry_screen`)
 - Tier discount: Gold 5%, Platinum 10%, Standard 0%. Qty >= 100 adds 3 points (stacks).

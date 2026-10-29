@@ -16,15 +16,16 @@ sales report rows, cancelled exclusion and grand total (SalesReportParityTests);
 customer name search width, wildcards, twelve-row cap and the injection fix
 (CustomerSearchParityTests).
 """
+
 from helpers import WebTestCase
 
 # Expected values computed from the seed data in app/db.py (same as legacy):
 # open = SUM(total_cents) over orders with status N or P
 SEED_OPEN_CENTS = {
-    "C1001": 4218,   # one N order
-    "C1002": 5090,   # one P order
-    "C1003": 0,      # only S order - shipped does not count toward credit
-    "C1004": 0,      # only C order - cancelled
+    "C1001": 4218,  # one N order
+    "C1002": 5090,  # one P order
+    "C1003": 0,  # only S order - shipped does not count toward credit
+    "C1004": 0,  # only C order - cancelled
 }
 
 
@@ -66,14 +67,19 @@ class CustomerLookupParityTests(WebTestCase):
 # real legacy handler run on an identical copy of the fixture (LegacyTwin).
 # ---------------------------------------------------------------------------
 import os  # noqa: E402
+from typing import get_args  # noqa: E402
 
-from app.services import pricing  # noqa: E402
 from legacy_oracle import LegacyTwin, legacy_price  # noqa: E402
+
+from app.routers import order_lifecycle  # noqa: E402
+from app.services import lifecycle, pricing  # noqa: E402
 
 
 class OrderEntryTestCase(WebTestCase):
     def order(self, cust, sku, qty, **extra):
-        return self.client.post("/api/orders", json={"cust_no": cust, "sku": sku, "qty": qty, **extra})
+        return self.client.post(
+            "/api/orders", json={"cust_no": cust, "sku": sku, "qty": qty, **extra}
+        )
 
     def twin(self):
         self.twins = getattr(self, "twins", 0) + 1
@@ -99,16 +105,22 @@ class OrderPricingParityTests(OrderEntryTestCase):
         self.assertEqual(r.status_code, 201, r.text)
         body = r.json()
         self.assertEqual(body["total_cents"], 4218)
-        self.assertEqual((body["gross_cents"], body["discount_pct"], body["tax_cents"]), (3897, 0, 321))
+        self.assertEqual(
+            (body["gross_cents"], body["discount_pct"], body["tax_cents"]), (3897, 0, 321)
+        )
         self.assertEqual(body["status"], "N")
-        last = self.query("SELECT order_no,cust_no,sku,qty,total_cents,status FROM orders "
-                          "ORDER BY order_no DESC LIMIT 1")[0]
+        last = self.query(
+            "SELECT order_no,cust_no,sku,qty,total_cents,status FROM orders "
+            "ORDER BY order_no DESC LIMIT 1"
+        )[0]
         self.assertEqual(last, (body["order_no"], "C1001", "HAM-01", 3, 4218, "N"))
 
     def test_gold_discount_truncates(self):
         # legacy test_gold_discount_truncates: 4950 -> discount 247, tax 387, total 5090
         body = self.order("C1002", "SAW-02", "2").json()
-        self.assertEqual((body["discount_pct"], body["discount_cents"], body["tax_cents"]), (5, 247, 387))
+        self.assertEqual(
+            (body["discount_pct"], body["discount_cents"], body["tax_cents"]), (5, 247, 387)
+        )
         self.assertEqual(body["total_cents"], 5090)
 
     def test_platinum_volume_discount_is_additive(self):
@@ -136,16 +148,21 @@ class OrderPricingParityTests(OrderEntryTestCase):
     def test_api_computes_rather_than_trusts_client_totals(self):
         body = self.order("C1001", "HAM-01", "3", total_cents=1, discount_pct=99).json()
         self.assertEqual(body["total_cents"], 4218)
-        self.assertEqual(self.query("SELECT total_cents FROM orders WHERE order_no=?",
-                                    body["order_no"])[0][0], 4218)
+        self.assertEqual(
+            self.query("SELECT total_cents FROM orders WHERE order_no=?", body["order_no"])[0][0],
+            4218,
+        )
 
     def test_integer_pricing_matches_legacy_float_expressions(self):
         for tier in ("S", "G", "P"):
             for qty in (1, 2, 3, 7, 99, 100, 101, 999, 9999):
                 for unit in range(1, 20000, 7):
                     p = pricing.price(unit, qty, tier)
-                    self.assertEqual((p.discount_pct, p.discount_cents, p.tax_cents, p.total_cents),
-                                     legacy_price(unit, qty, tier), (unit, qty, tier))
+                    self.assertEqual(
+                        (p.discount_pct, p.discount_cents, p.tax_cents, p.total_cents),
+                        legacy_price(unit, qty, tier),
+                        (unit, qty, tier),
+                    )
 
 
 class OrderInputParityTests(OrderEntryTestCase):
@@ -154,15 +171,19 @@ class OrderInputParityTests(OrderEntryTestCase):
         r = self.order("c1001", "ham-01", "3")
         self.assertEqual(r.status_code, 201, r.text)
         self.assertEqual(len(self.query("SELECT 1 FROM orders")), 5)
-        self.assertEqual(self.query("SELECT cust_no,sku FROM orders ORDER BY order_no DESC LIMIT 1")[0],
-                         ("C1001", "HAM-01"))
+        self.assertEqual(
+            self.query("SELECT cust_no,sku FROM orders ORDER BY order_no DESC LIMIT 1")[0],
+            ("C1001", "HAM-01"),
+        )
 
     def test_field_width_silently_truncates_quantity(self):
         # legacy test_field_width_silently_truncates_quantity: "00035" -> qty 3
         r = self.order("C1001", "HAM-01", "00035")
         self.assertEqual(r.status_code, 201, r.text)
-        self.assertEqual(self.query("SELECT qty,total_cents FROM orders ORDER BY order_no DESC LIMIT 1")[0],
-                         (3, 4218))
+        self.assertEqual(
+            self.query("SELECT qty,total_cents FROM orders ORDER BY order_no DESC LIMIT 1")[0],
+            (3, 4218),
+        )
 
     def test_integer_qty_follows_four_character_field(self):
         self.assertEqual(pricing.parse_qty(12345), 1234)
@@ -172,8 +193,11 @@ class OrderInputParityTests(OrderEntryTestCase):
 
     def test_control_keys_replay_like_legacy_prompt(self):
         # Legacy ENTER ends the field; target text after a newline is never read.
-        for raw, legacy_keys in (("c1001\nX", "c1001"), ("c1002\x7f1", "c1002\x7f1"),
-                                 ("c10\x0801\x01", "c10\x0801")):
+        for raw, legacy_keys in (
+            ("c1001\nX", "c1001"),
+            ("c1002\x7f1", "c1002\x7f1"),
+            ("c10\x0801\x01", "c10\x0801"),
+        ):
             with self.subTest(raw=raw):
                 self.execute("DELETE FROM orders WHERE order_no>4")
                 self.execute("UPDATE products SET stock=117 WHERE sku='HAM-01'")
@@ -188,20 +212,24 @@ class OrderInputParityTests(OrderEntryTestCase):
         self.assertEqual(pricing.field("c10\x1b01", pricing.CUST_WIDTH), "C1001")
         r = self.order("C1001\x1b", "HAM-01\x1b", "3\x1b")
         self.assertEqual(r.status_code, 201, r.text)
-        self.assertEqual((r.json()["cust_no"], r.json()["sku"], r.json()["qty"]), ("C1001", "HAM-01", 3))
+        self.assertEqual(
+            (r.json()["cust_no"], r.json()["sku"], r.json()["qty"]), ("C1001", "HAM-01", 3)
+        )
 
     def test_oversized_raw_fields_are_rejected_before_replay(self):
         before = self.snapshot()
         limit = pricing.MAX_RAW_CHARS
         at_limit = self.order("C1001" + "\x08" * (limit - 5), "HAM-01", "3")
         self.assert_rejected_without_write(at_limit, 404, "INVALID CUSTOMER")
-        int_at_limit = self.order("C1001", "NAI-04", 10 ** limit - 1)
+        int_at_limit = self.order("C1001", "NAI-04", 10**limit - 1)
         self.assert_rejected_without_write(int_at_limit, 409, "INSUFFICIENT STOCK")
-        for qty in (10 ** limit, -10 ** (limit - 1)):
+        for qty in (10**limit, -(10 ** (limit - 1))):
             self.assertEqual(self.order("C1001", "HAM-01", qty).status_code, 422)
-        for body in ({"cust_no": "C1001" + "X" * limit, "sku": "HAM-01", "qty": "3"},
-                     {"cust_no": "C1001", "sku": "HAM-01" + "X" * limit, "qty": "3"},
-                     {"cust_no": "C1001", "sku": "HAM-01", "qty": "3" * (limit + 1)}):
+        for body in (
+            {"cust_no": "C1001" + "X" * limit, "sku": "HAM-01", "qty": "3"},
+            {"cust_no": "C1001", "sku": "HAM-01" + "X" * limit, "qty": "3"},
+            {"cust_no": "C1001", "sku": "HAM-01", "qty": "3" * (limit + 1)},
+        ):
             self.assertEqual(self.client.post("/api/orders", json=body).status_code, 422)
             for page in ("/orders/preview", "/orders/confirm"):
                 self.assertEqual(self.client.post(page, data=body).status_code, 422, page)
@@ -210,8 +238,15 @@ class OrderInputParityTests(OrderEntryTestCase):
     def test_every_rejection_reason_has_an_http_status(self):
         from app.routers.orders import REJECTION_STATUS
         from app.services import orders
-        reasons = {orders.INVALID_CUSTOMER, orders.INVALID_SKU, orders.INVALID_QTY,
-                   orders.INSUFFICIENT_STOCK, orders.CREDIT_EXCEEDED, orders.NOT_CREATED}
+
+        reasons = {
+            orders.INVALID_CUSTOMER,
+            orders.INVALID_SKU,
+            orders.INVALID_QTY,
+            orders.INSUFFICIENT_STOCK,
+            orders.CREDIT_EXCEEDED,
+            orders.NOT_CREATED,
+        }
         self.assertEqual(set(REJECTION_STATUS), reasons)
         self.assertEqual(orders.OrderUnavailable.reason, orders.NOT_CREATED)
 
@@ -223,8 +258,12 @@ class OrderInputParityTests(OrderEntryTestCase):
         r, _ = self.assert_matches_legacy("wide12345xyz", "part56789zz", "2")
         self.assertEqual(r.status_code, 201, r.text)
         self.assertEqual((r.json()["cust_no"], r.json()["sku"]), ("WIDE1234", "PART5678"))
-        self.assertEqual(self.query("SELECT COUNT(*) FROM orders WHERE cust_no='WIDE12345' "
-                                    "OR sku='PART56789'")[0][0], 0)
+        self.assertEqual(
+            self.query("SELECT COUNT(*) FROM orders WHERE cust_no='WIDE12345' OR sku='PART56789'")[
+                0
+            ][0],
+            0,
+        )
 
 
 class OrderValidationParityTests(OrderEntryTestCase):
@@ -257,7 +296,11 @@ class OrderValidationParityTests(OrderEntryTestCase):
 
     def test_malformed_body_rejected_without_write(self):
         before = self.snapshot()
-        for body in ({}, {"cust_no": "C1001", "sku": "HAM-01"}, {"cust_no": "C1001", "sku": "HAM-01", "qty": 1.5}):
+        for body in (
+            {},
+            {"cust_no": "C1001", "sku": "HAM-01"},
+            {"cust_no": "C1001", "sku": "HAM-01", "qty": 1.5},
+        ):
             self.assertEqual(self.client.post("/api/orders", json=body).status_code, 422, body)
         self.assertEqual(self.snapshot(), before)
 
@@ -295,8 +338,10 @@ class OrderCreditParityTests(OrderEntryTestCase):
     def test_shipped_orders_do_not_count_toward_credit(self):
         # legacy test_shipped_orders_do_not_count_toward_credit: 6 orders afterwards
         self.execute("UPDATE customers SET credit_lim=100 WHERE cust_no='C1001'")
-        self.execute("INSERT INTO orders (cust_no,sku,qty,total_cents,status) "
-                     "VALUES ('C1001','HAM-01',1,9000,'S')")
+        self.execute(
+            "INSERT INTO orders (cust_no,sku,qty,total_cents,status) "
+            "VALUES ('C1001','HAM-01',1,9000,'S')"
+        )
         r = self.order("C1001", "HAM-01", "3")
         self.assertEqual(r.status_code, 201, r.text)
         self.assertEqual(len(self.query("SELECT 1 FROM orders")), 6)
@@ -307,8 +352,11 @@ class OrderCreditParityTests(OrderEntryTestCase):
             for open_cents, accepted in ((5782, True), (5783, False)):
                 with self.subTest(status=status, open_cents=open_cents):
                     self.execute("UPDATE customers SET credit_lim=100 WHERE cust_no='C1001'")
-                    self.execute("UPDATE orders SET total_cents=?, status=? WHERE order_no=1",
-                                 open_cents, status)
+                    self.execute(
+                        "UPDATE orders SET total_cents=?, status=? WHERE order_no=1",
+                        open_cents,
+                        status,
+                    )
                     self.execute("DELETE FROM orders WHERE order_no>4")
                     r, legacy_text = self.assert_matches_legacy("C1001", "HAM-01", "3")
                     self.assertEqual(r.status_code, 201 if accepted else 409, r.text)
@@ -319,16 +367,20 @@ class OrderCreditParityTests(OrderEntryTestCase):
         # C1001 limit $100 with no own exposure; C1002's open orders are irrelevant.
         self.execute("UPDATE customers SET credit_lim=100 WHERE cust_no='C1001'")
         self.execute("DELETE FROM orders WHERE cust_no='C1001'")
-        self.execute("INSERT INTO orders (cust_no,sku,qty,total_cents,status) "
-                     "VALUES ('C1002','HAM-01',1,999999,'N')")
+        self.execute(
+            "INSERT INTO orders (cust_no,sku,qty,total_cents,status) "
+            "VALUES ('C1002','HAM-01',1,999999,'N')"
+        )
         r, _ = self.assert_matches_legacy("C1001", "HAM-01", "5")
         self.assertEqual(r.status_code, 201, r.text)
 
     def test_shipped_and_cancelled_orders_do_not_consume_exposure(self):
         self.execute("UPDATE customers SET credit_lim=100 WHERE cust_no='C1001'")
         self.execute("UPDATE orders SET status='S', total_cents=999999 WHERE order_no=1")
-        self.execute("INSERT INTO orders (cust_no,sku,qty,total_cents,status) "
-                     "VALUES ('C1001','HAM-01',1,999999,'C')")
+        self.execute(
+            "INSERT INTO orders (cust_no,sku,qty,total_cents,status) "
+            "VALUES ('C1001','HAM-01',1,999999,'C')"
+        )
         r, _ = self.assert_matches_legacy("C1001", "HAM-01", "3")
         self.assertEqual(r.status_code, 201, r.text)
 
@@ -372,21 +424,31 @@ class OrderLifecycleTestCase(OrderEntryTestCase):
 
 
 class OrderListParityTests(OrderLifecycleTestCase):
+    def test_router_action_literal_matches_service_actions(self):
+        """The route's allowed actions must stay in sync with lifecycle.ACTIONS.
+
+        The router spells the actions out as a Literal because mypy cannot
+        evaluate Literal[...] from a runtime tuple; this test is the sync check.
+        """
+        self.assertEqual(set(get_args(order_lifecycle.Action)), set(lifecycle.ACTIONS))
+
     def test_list_is_newest_first_including_cancelled_matches_legacy(self):
         legacy = legacy_rows(self.twin().order_list())
         body = self.client.get("/api/orders").json()
         self.assertEqual([o["order_no"] for o in body], [4, 3, 2, 1])
         self.assertEqual([r[0] for r in legacy], [o["order_no"] for o in body])
-        for row, o in zip(legacy, body):
-            self.assertEqual(row[:4] + row[5:],
-                             (o["order_no"], o["cust_no"], o["sku"], o["qty"], o["status"]))
+        for row, o in zip(legacy, body, strict=True):
+            self.assertEqual(
+                row[:4] + row[5:], (o["order_no"], o["cust_no"], o["sku"], o["qty"], o["status"])
+            )
             self.assertEqual(row[4], "%d.%02d" % divmod(o["total_cents"], 100))
         self.assertEqual([o["status"] for o in body], ["C", "S", "P", "N"])
 
     def test_list_matches_stored_rows_in_integer_cents(self):
         body = self.client.get("/api/orders").json()
-        stored = self.query("SELECT order_no,cust_no,sku,qty,total_cents,status FROM orders "
-                            "ORDER BY order_no DESC")
+        stored = self.query(
+            "SELECT order_no,cust_no,sku,qty,total_cents,status FROM orders ORDER BY order_no DESC"
+        )
         self.assertEqual([tuple(o.values()) for o in body], stored)
         for o in body:
             self.assertIs(type(o["total_cents"]), int)
@@ -399,7 +461,9 @@ class OrderListParityTests(OrderLifecycleTestCase):
 
     def test_status_change_does_not_reorder(self):
         self.assertEqual(self.act(1, "pick").status_code, 200)
-        self.assertEqual([o["order_no"] for o in self.client.get("/api/orders").json()], [4, 3, 2, 1])
+        self.assertEqual(
+            [o["order_no"] for o in self.client.get("/api/orders").json()], [4, 3, 2, 1]
+        )
 
     def test_empty_list_message(self):
         # legacy test_empty_list_message: "NO ORDERS ON FILE" with no rows
@@ -411,9 +475,17 @@ class OrderListParityTests(OrderLifecycleTestCase):
         self.assertIn("NO ORDERS ON FILE", page.text)
 
     def test_get_single_order(self):
-        self.assertEqual(self.client.get("/api/orders/2").json(),
-                         {"order_no": 2, "cust_no": "C1002", "sku": "SAW-02", "qty": 2,
-                          "total_cents": 5090, "status": "P"})
+        self.assertEqual(
+            self.client.get("/api/orders/2").json(),
+            {
+                "order_no": 2,
+                "cust_no": "C1002",
+                "sku": "SAW-02",
+                "qty": 2,
+                "total_cents": 5090,
+                "status": "P",
+            },
+        )
         r = self.client.get("/api/orders/99")
         self.assertEqual((r.status_code, r.json()["detail"]), (404, "ORDER NOT FOUND"))
 
@@ -473,8 +545,7 @@ class OrderStatusFlowParityTests(OrderLifecycleTestCase):
                     self.assertEqual(r.status_code, 200 if legacy_changed else 409, r.text)
                     if legacy_changed:
                         changed.append((order_no, action))
-        self.assertEqual(sorted(changed),
-                         [(1, "cancel"), (1, "pick"), (2, "cancel"), (2, "ship")])
+        self.assertEqual(sorted(changed), [(1, "cancel"), (1, "pick"), (2, "cancel"), (2, "ship")])
 
     def test_pick_and_ship_do_not_change_stock(self):
         products = self.query("SELECT * FROM products ORDER BY sku")
@@ -513,19 +584,25 @@ class OrderStatusFlowParityTests(OrderLifecycleTestCase):
     def test_every_lifecycle_failure_has_an_http_status(self):
         from app.routers.order_lifecycle import LIFECYCLE_STATUS
         from app.services import lifecycle
-        self.assertEqual(set(LIFECYCLE_STATUS), {lifecycle.ORDER_NOT_FOUND,
-                                                 lifecycle.TRANSITION_NOT_ALLOWED,
-                                                 lifecycle.NOT_UPDATED,
-                                                 lifecycle.LIST_UNAVAILABLE})
+
+        self.assertEqual(
+            set(LIFECYCLE_STATUS),
+            {
+                lifecycle.ORDER_NOT_FOUND,
+                lifecycle.TRANSITION_NOT_ALLOWED,
+                lifecycle.NOT_UPDATED,
+                lifecycle.LIST_UNAVAILABLE,
+            },
+        )
 
     def test_out_of_range_order_numbers_are_rejected_without_write(self):
         before = self.snapshot()
-        for order_no in (0, -1, 2 ** 63, 10 ** 20):
+        for order_no in (0, -1, 2**63, 10**20):
             with self.subTest(order_no=order_no):
                 self.assertEqual(self.client.get(f"/api/orders/{order_no}").status_code, 422)
                 self.assertEqual(self.act(order_no, "cancel").status_code, 422)
                 self.assertEqual(self.client.post(f"/orders/{order_no}/cancel").status_code, 422)
-        self.assertEqual(self.client.get(f"/api/orders/{2 ** 63 - 1}").status_code, 404)
+        self.assertEqual(self.client.get(f"/api/orders/{2**63 - 1}").status_code, 404)
         self.assertEqual(self.snapshot(), before)
 
     def test_cancel_with_missing_product_row_matches_legacy(self):
@@ -575,8 +652,10 @@ class SalesReportParityTests(OrderLifecycleTestCase):
     def assert_report_matches_legacy(self, ties_in_any_order=False):
         legacy_rows_, legacy_grand = legacy_report(self.twin().report())
         body = self.report()
-        target_rows = [(row["name"], row["order_count"], cents_text(row["sales_cents"]))
-                       for row in body["rows"]]
+        target_rows = [
+            (row["name"], row["order_count"], cents_text(row["sales_cents"]))
+            for row in body["rows"]
+        ]
         if ties_in_any_order:
             # Legacy sorts by sales only, so the order of equal-sales rows is unspecified.
             self.assertEqual([r[2] for r in target_rows], [r[2] for r in legacy_rows_])
@@ -590,8 +669,10 @@ class SalesReportParityTests(OrderLifecycleTestCase):
         # legacy test_zero_order_customer_still_listed: C1004 has only a cancelled order
         body = self.assert_report_matches_legacy()
         delta = [row for row in body["rows"] if row["cust_no"] == "C1004"]
-        self.assertEqual(delta, [{"cust_no": "C1004", "name": "DELTA TOOLWORKS",
-                                  "order_count": 0, "sales_cents": 0}])
+        self.assertEqual(
+            delta,
+            [{"cust_no": "C1004", "name": "DELTA TOOLWORKS", "order_count": 0, "sales_cents": 0}],
+        )
 
     def test_grand_total_excludes_cancelled(self):
         # legacy test_grand_total_excludes_cancelled: 4218 + 5090 + 56412 = 65720
@@ -600,10 +681,10 @@ class SalesReportParityTests(OrderLifecycleTestCase):
 
     def test_seed_rows_sorted_by_descending_sales_match_legacy(self):
         body = self.assert_report_matches_legacy()
-        self.assertEqual([(row["cust_no"], row["order_count"], row["sales_cents"])
-                          for row in body["rows"]],
-                         [("C1003", 1, 56412), ("C1002", 1, 5090), ("C1001", 1, 4218),
-                          ("C1004", 0, 0)])
+        self.assertEqual(
+            [(row["cust_no"], row["order_count"], row["sales_cents"]) for row in body["rows"]],
+            [("C1003", 1, 56412), ("C1002", 1, 5090), ("C1001", 1, 4218), ("C1004", 0, 0)],
+        )
 
     def test_report_money_is_integer_cents(self):
         body = self.report()
@@ -616,39 +697,51 @@ class SalesReportParityTests(OrderLifecycleTestCase):
         # Filtering status after the outer join would drop this row.
         self.execute("DELETE FROM orders WHERE cust_no='C1004'")
         body = self.assert_report_matches_legacy()
-        self.assertEqual([row for row in body["rows"] if row["cust_no"] == "C1004"],
-                         [{"cust_no": "C1004", "name": "DELTA TOOLWORKS",
-                           "order_count": 0, "sales_cents": 0}])
+        self.assertEqual(
+            [row for row in body["rows"] if row["cust_no"] == "C1004"],
+            [{"cust_no": "C1004", "name": "DELTA TOOLWORKS", "order_count": 0, "sales_cents": 0}],
+        )
         self.assertEqual(body["grand_total_cents"], 65720)
 
     def test_all_zero_report_retains_every_customer(self):
         self.execute("DELETE FROM orders")
         body = self.assert_report_matches_legacy(ties_in_any_order=True)
-        self.assertEqual(sorted((row["cust_no"], row["order_count"], row["sales_cents"])
-                                for row in body["rows"]),
-                         [("C1001", 0, 0), ("C1002", 0, 0), ("C1003", 0, 0), ("C1004", 0, 0)])
+        self.assertEqual(
+            sorted(
+                (row["cust_no"], row["order_count"], row["sales_cents"]) for row in body["rows"]
+            ),
+            [("C1001", 0, 0), ("C1002", 0, 0), ("C1003", 0, 0), ("C1004", 0, 0)],
+        )
         self.assertEqual(body["grand_total_cents"], 0)
 
     def test_equal_sales_rows_are_ordered_by_customer_number(self):
         # DELTA's seed order (stored 9741) reopened at ACME's stored 4218 ties the two rows.
         self.execute("UPDATE orders SET status='N', total_cents=4218 WHERE order_no=4")
         body = self.assert_report_matches_legacy(ties_in_any_order=True)
-        self.assertEqual([row["cust_no"] for row in body["rows"]],
-                         ["C1003", "C1002", "C1001", "C1004"])
+        self.assertEqual(
+            [row["cust_no"] for row in body["rows"]], ["C1003", "C1002", "C1001", "C1004"]
+        )
         # A name that sorts last but a number that sorts first: the tie-break is cust_no.
         self.execute("INSERT INTO customers VALUES ('C0999','ZZ LAST CO','TYLER','S',100)")
-        self.execute("INSERT INTO orders (cust_no,sku,qty,total_cents,status) "
-                     "VALUES ('C0999','HAM-01',3,4218,'N')")
+        self.execute(
+            "INSERT INTO orders (cust_no,sku,qty,total_cents,status) "
+            "VALUES ('C0999','HAM-01',3,4218,'N')"
+        )
         body = self.assert_report_matches_legacy(ties_in_any_order=True)
-        self.assertEqual([row["cust_no"] for row in body["rows"]],
-                         ["C1003", "C1002", "C0999", "C1001", "C1004"])
+        self.assertEqual(
+            [row["cust_no"] for row in body["rows"]], ["C1003", "C1002", "C0999", "C1001", "C1004"]
+        )
         self.execute("DELETE FROM orders")
-        self.assertEqual([row["cust_no"] for row in self.report()["rows"]],
-                         ["C0999", "C1001", "C1002", "C1003", "C1004"])
+        self.assertEqual(
+            [row["cust_no"] for row in self.report()["rows"]],
+            ["C0999", "C1001", "C1002", "C1003", "C1004"],
+        )
 
     def test_orders_for_unknown_customers_are_not_reported(self):
-        self.execute("INSERT INTO orders (cust_no,sku,qty,total_cents,status) "
-                     "VALUES ('C9999','HAM-01',1,1407,'N')")
+        self.execute(
+            "INSERT INTO orders (cust_no,sku,qty,total_cents,status) "
+            "VALUES ('C9999','HAM-01',1,1407,'N')"
+        )
         body = self.assert_report_matches_legacy()
         self.assertNotIn("C9999", [row["cust_no"] for row in body["rows"]])
         self.assertEqual(body["grand_total_cents"], 65720)
@@ -664,13 +757,17 @@ class SalesReportParityTests(OrderLifecycleTestCase):
         for status in ("N", "P", "S", "C"):
             with self.subTest(status=status):
                 appdb.init(reset=True).close()
-                self.execute("INSERT INTO orders (cust_no,sku,qty,total_cents,status) "
-                             "VALUES ('C1004','DRL-03',1,9741,?)", status)
+                self.execute(
+                    "INSERT INTO orders (cust_no,sku,qty,total_cents,status) "
+                    "VALUES ('C1004','DRL-03',1,9741,?)",
+                    status,
+                )
                 body = self.assert_report_matches_legacy()
                 delta = [row for row in body["rows"] if row["cust_no"] == "C1004"][0]
                 counted = status != "C"
-                self.assertEqual((delta["order_count"], delta["sales_cents"]),
-                                 (1, 9741) if counted else (0, 0))
+                self.assertEqual(
+                    (delta["order_count"], delta["sales_cents"]), (1, 9741) if counted else (0, 0)
+                )
                 self.assertEqual(body["grand_total_cents"], 65720 + (9741 if counted else 0))
 
     def test_report_sums_stored_totals_without_repricing(self):
@@ -707,7 +804,7 @@ from unittest import mock  # noqa: E402
 
 from app.services import search  # noqa: E402
 
-INJECTION = "' OR '1'='1"   # legacy SearchTests.test_sql_injection_present_in_legacy
+INJECTION = "' OR '1'='1"  # legacy SearchTests.test_sql_injection_present_in_legacy
 
 
 def legacy_search_lines(customers):
@@ -757,12 +854,18 @@ class CustomerSearchParityTests(OrderEntryTestCase):
         self.assertNotIn("CONTOSO", str(body))
 
     def test_interior_substring_of_name_matches_legacy(self):
-        self.assertEqual(self.tuples(self.assert_search_matches_legacy("HARD")),
-                         [("C1001", "ACME HARDWARE", "DALLAS")])
-        self.assertEqual(self.tuples(self.assert_search_matches_legacy("SUPP")),
-                         [("C1003", "CONTOSO SUPPLY", "HOUSTON")])
-        self.assertEqual([c["cust_no"] for c in self.assert_search_matches_legacy("O")["customers"]],
-                         ["C1003", "C1004"])
+        self.assertEqual(
+            self.tuples(self.assert_search_matches_legacy("HARD")),
+            [("C1001", "ACME HARDWARE", "DALLAS")],
+        )
+        self.assertEqual(
+            self.tuples(self.assert_search_matches_legacy("SUPP")),
+            [("C1003", "CONTOSO SUPPLY", "HOUSTON")],
+        )
+        self.assertEqual(
+            [c["cust_no"] for c in self.assert_search_matches_legacy("O")["customers"]],
+            ["C1003", "C1004"],
+        )
 
     def test_city_and_customer_number_are_not_searched(self):
         for term in ("DALLAS", "C1001", "1001"):
@@ -781,13 +884,15 @@ class CustomerSearchParityTests(OrderEntryTestCase):
             with self.subTest(term=term):
                 body = self.assert_search_matches_legacy(term)
                 self.assertEqual(body["term"], "ABCDEFGHIJKLMNOPQRST")
-                self.assertEqual(self.tuples(body),
-                                 [("W2001", "ABCDEFGHIJKLMNOPQRST", "WIDTHVILLE")])
+                self.assertEqual(
+                    self.tuples(body), [("W2001", "ABCDEFGHIJKLMNOPQRST", "WIDTHVILLE")]
+                )
 
     def test_at_most_twelve_matches_in_table_order_match_legacy(self):
         # Inserted in descending number order, so table order is not cust_no order.
-        self.add_customers(*[("L%02d" % n, "LIMITCHECK %02d" % n, "CITY %02d" % n)
-                             for n in range(13, 0, -1)])
+        self.add_customers(
+            *[("L%02d" % n, "LIMITCHECK %02d" % n, "CITY %02d" % n) for n in range(13, 0, -1)]
+        )
         body = self.assert_search_matches_legacy("LIMITCHECK")
         found = self.tuples(body)
         self.assertEqual(len(found), 12)
@@ -799,10 +904,16 @@ class CustomerSearchParityTests(OrderEntryTestCase):
         self.assertEqual(len(self.assert_search_matches_legacy("LIMITCHECK")["customers"]), 11)
 
     def test_like_wildcards_remain_active_matches_legacy(self):
-        self.add_customers(("K0", "WILDAB", "ZERO"), ("K1", "WILDAXB", "ONE"),
-                           ("K2", "WILDAXXB", "TWO"))
-        matrix = {"WILDA_B": ["K1"], "WILDA%B": ["K0", "K1", "K2"], "WILDA__B": ["K2"],
-                  "WILDAB": ["K0"], "W_LD": ["K0", "K1", "K2"]}
+        self.add_customers(
+            ("K0", "WILDAB", "ZERO"), ("K1", "WILDAXB", "ONE"), ("K2", "WILDAXXB", "TWO")
+        )
+        matrix = {
+            "WILDA_B": ["K1"],
+            "WILDA%B": ["K0", "K1", "K2"],
+            "WILDA__B": ["K2"],
+            "WILDAB": ["K0"],
+            "W_LD": ["K0", "K1", "K2"],
+        }
         for term, expected in matrix.items():
             with self.subTest(term=term):
                 body = self.assert_search_matches_legacy(term)
@@ -829,13 +940,17 @@ class CustomerSearchParityTests(OrderEntryTestCase):
             with self.subTest(raw=raw):
                 self.assertEqual(self.twin().search(raw), [])
                 self.assertEqual(self.search(raw), {"term": "", "customers": []})
-        self.assertEqual(self.tuples(self.assert_search_matches_legacy("EXIT ")),
-                         [("X1", "EXIT SUPPLY", "TYLER")])
+        self.assertEqual(
+            self.tuples(self.assert_search_matches_legacy("EXIT ")),
+            [("X1", "EXIT SUPPLY", "TYLER")],
+        )
 
     def test_escape_character_is_ignored_text_not_a_back_key(self):
         # Intentional difference shared with order entry: legacy ESC left the screen.
         self.assertEqual(self.twin().search("\x1bACME"), [])
-        self.assertEqual(self.tuples(self.search("\x1bACME")), [("C1001", "ACME HARDWARE", "DALLAS")])
+        self.assertEqual(
+            self.tuples(self.search("\x1bACME")), [("C1001", "ACME HARDWARE", "DALLAS")]
+        )
 
     def test_control_keys_replay_like_legacy_prompt(self):
         # ENTER ends the field; BS/DEL remove the previous character.
@@ -850,8 +965,9 @@ class CustomerSearchParityTests(OrderEntryTestCase):
         for payload in (INJECTION, "'; DROP TABLE customers; --", '" OR ""="'):
             with self.subTest(payload=payload):
                 self.assertEqual(self.search(payload)["customers"], [])
-        self.assertEqual((self.query("SELECT * FROM customers ORDER BY cust_no"), self.snapshot()),
-                         before)
+        self.assertEqual(
+            (self.query("SELECT * FROM customers ORDER BY cust_no"), self.snapshot()), before
+        )
         self.assertEqual(self.tuples(self.search("ACME")), [("C1001", "ACME HARDWARE", "DALLAS")])
 
     def test_quote_in_name_is_searchable(self):
@@ -865,8 +981,9 @@ class CustomerSearchParityTests(OrderEntryTestCase):
             self.search(INJECTION)
             self.search("acme")
         self.assertEqual([sql for sql, _ in log], [search._SEARCH_SQL] * 2)
-        self.assertEqual([params for _, params in log],
-                         [("%" + INJECTION + "%", 12), ("%ACME%", 12)])
+        self.assertEqual(
+            [params for _, params in log], [("%" + INJECTION + "%", 12), ("%ACME%", 12)]
+        )
         self.assertNotIn("'", search._SEARCH_SQL)
 
     def test_oversized_raw_name_is_rejected_before_replay(self):
@@ -882,5 +999,6 @@ class CustomerSearchParityTests(OrderEntryTestCase):
         before = (self.query("SELECT * FROM customers ORDER BY cust_no"), self.snapshot())
         self.search("ACME")
         self.client.get("/customers/search", params={"name": "ACME"})
-        self.assertEqual((self.query("SELECT * FROM customers ORDER BY cust_no"), self.snapshot()),
-                         before)
+        self.assertEqual(
+            (self.query("SELECT * FROM customers ORDER BY cust_no"), self.snapshot()), before
+        )

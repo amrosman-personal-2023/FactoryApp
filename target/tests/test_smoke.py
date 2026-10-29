@@ -4,6 +4,7 @@ This is the mission's final sanity check - if this passes, the app runs
 end-to-end. Keep it fast; do not add per-rule assertions here (those belong
 in test_parity.py).
 """
+
 import json
 import re
 
@@ -11,7 +12,6 @@ from helpers import WebTestCase
 
 
 class SmokeTests(WebTestCase):
-
     def test_health_is_ok(self):
         r = self.client.get("/health")
         self.assertEqual(r.status_code, 200)

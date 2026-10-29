@@ -7,8 +7,10 @@ legacy curses handler:
 - open_total_cents mirrors the legacy "used" credit computation:
   SUM(total_cents) over orders with status N or P.
 """
-from app import db
+
 from fastapi import APIRouter, HTTPException
+
+from app import db
 
 router = APIRouter(prefix="/api/customers", tags=["customers"])
 

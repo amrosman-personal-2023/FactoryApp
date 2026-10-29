@@ -16,6 +16,7 @@ LIKE pattern is a bound parameter, so the term is always data. As in order
 entry, an ESC character in submitted text is ignored rather than treated as
 the legacy back key.
 """
+
 import sqlite3
 from dataclasses import dataclass
 
@@ -31,8 +32,7 @@ EXIT_WORD = "EXIT"
 
 # Legacy had no ORDER BY and showed the first twelve rows of a full scan,
 # which for a leading-% LIKE is rowid order; ORDER BY rowid pins that.
-_SEARCH_SQL = ("SELECT cust_no,name,city FROM customers WHERE name LIKE ? "
-               "ORDER BY rowid LIMIT ?")
+_SEARCH_SQL = "SELECT cust_no,name,city FROM customers WHERE name LIKE ? ORDER BY rowid LIMIT ?"
 
 
 @dataclass(frozen=True)

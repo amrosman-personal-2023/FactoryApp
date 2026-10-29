@@ -15,6 +15,7 @@ Intentional difference: the legacy 24-line terminal silently dropped rows (and
 then the GRAND TOTAL line) past the bottom of the screen; the web report lists
 every customer.
 """
+
 import sqlite3
 from dataclasses import dataclass
 

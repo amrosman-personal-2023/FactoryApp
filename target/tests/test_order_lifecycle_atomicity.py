@@ -3,6 +3,7 @@
 Faults are injected with test-only SQLite triggers; there is no production
 fault-control endpoint.
 """
+
 import sqlite3
 import threading
 import time
@@ -102,7 +103,9 @@ class LifecycleAtomicityTests(WebTestCase):
             t = threading.Thread(target=run)
             t.start()
             time.sleep(0.3)
-            self.assertTrue(t.is_alive(), "cancel read the status without waiting for the write lock")
+            self.assertTrue(
+                t.is_alive(), "cancel read the status without waiting for the write lock"
+            )
             blocker.commit()
         finally:
             blocker.close()
@@ -116,8 +119,10 @@ class LifecycleAtomicityTests(WebTestCase):
         for order_no, sku, qty, status in SEED_OPEN:
             with self.subTest(order_no=order_no):
                 appdb.init(reset=True).close()
-                self.execute("CREATE TRIGGER fail_restock BEFORE UPDATE ON products "
-                             "BEGIN SELECT RAISE(ABORT, 'injected failure'); END")
+                self.execute(
+                    "CREATE TRIGGER fail_restock BEFORE UPDATE ON products "
+                    "BEGIN SELECT RAISE(ABORT, 'injected failure'); END"
+                )
                 before = self.snapshot()
                 start = self.stock(sku)
                 r = self.client.post(f"/api/orders/{order_no}/cancel")
@@ -137,12 +142,16 @@ class LifecycleAtomicityTests(WebTestCase):
                 self.assertEqual(ok.status_code, 200, ok.text)
                 self.assertEqual(self.order_row(order_no), "C")
                 self.assertEqual(self.stock(sku), start + qty)
-                self.assertEqual(self.client.post(f"/api/orders/{order_no}/cancel").status_code, 409)
+                self.assertEqual(
+                    self.client.post(f"/api/orders/{order_no}/cancel").status_code, 409
+                )
                 self.assertEqual(self.stock(sku), start + qty)
 
     def test_failure_on_status_write_leaves_everything_unchanged(self):
-        self.execute("CREATE TRIGGER fail_status BEFORE UPDATE ON orders "
-                     "BEGIN SELECT RAISE(ABORT, 'injected failure'); END")
+        self.execute(
+            "CREATE TRIGGER fail_status BEFORE UPDATE ON orders "
+            "BEGIN SELECT RAISE(ABORT, 'injected failure'); END"
+        )
         before = self.snapshot()
         for action, order_no in (("pick", 1), ("ship", 2), ("cancel", 1)):
             r = self.client.post(f"/api/orders/{order_no}/{action}")
@@ -150,8 +159,9 @@ class LifecycleAtomicityTests(WebTestCase):
         self.assertEqual(self.snapshot(), before)
 
     def test_status_write_that_changes_no_row_rolls_back(self):
-        self.execute("CREATE TRIGGER skip_status BEFORE UPDATE ON orders "
-                     "BEGIN SELECT RAISE(IGNORE); END")
+        self.execute(
+            "CREATE TRIGGER skip_status BEFORE UPDATE ON orders BEGIN SELECT RAISE(IGNORE); END"
+        )
         before = self.snapshot()
         r = self.client.post("/api/orders/1/cancel")
         self.assertEqual(r.status_code, 503)
@@ -164,7 +174,9 @@ class LifecycleAtomicityTests(WebTestCase):
         real_connect = sqlite3.connect
         try:
             blocker.execute("BEGIN IMMEDIATE")
-            with mock.patch.object(appdb, "connect", lambda: real_connect(appdb.DB_PATH, timeout=0.1)):
+            with mock.patch.object(
+                appdb, "connect", lambda: real_connect(appdb.DB_PATH, timeout=0.1)
+            ):
                 r = self.client.post("/api/orders/1/cancel")
         finally:
             blocker.rollback()

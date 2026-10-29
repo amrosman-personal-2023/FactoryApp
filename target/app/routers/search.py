@@ -5,6 +5,7 @@ twelve matching customers. It lives outside /api/customers so the
 /api/customers/{cust_no} lookup can never capture it. A blank term returns
 no customers rather than a full listing.
 """
+
 from typing import Annotated
 
 from fastapi import APIRouter, Query
@@ -20,8 +21,9 @@ RawName = Annotated[str, Query(max_length=pricing.MAX_RAW_CHARS)]
 def search_body(result):
     return {
         "term": result.term,
-        "customers": [{"cust_no": m.cust_no, "name": m.name, "city": m.city}
-                      for m in result.matches],
+        "customers": [
+            {"cust_no": m.cust_no, "name": m.name, "city": m.city} for m in result.matches
+        ],
     }
 
 

@@ -3,6 +3,7 @@
 Shared by POST /api/orders and the HTML order-entry page so both paths apply
 identical rules. Validation order and messages follow legacy order_entry_screen.
 """
+
 import sqlite3
 from dataclasses import dataclass
 
@@ -51,9 +52,7 @@ def _quote(conn, raw_cust, raw_sku, raw_qty):
     if not c:
         raise OrderRejected(INVALID_CUSTOMER)
     sku = pricing.field(raw_sku, pricing.SKU_WIDTH)
-    p = conn.execute(
-        "SELECT descr,price_cents,stock FROM products WHERE sku=?", (sku,)
-    ).fetchone()
+    p = conn.execute("SELECT descr,price_cents,stock FROM products WHERE sku=?", (sku,)).fetchone()
     if not p:
         raise OrderRejected(INVALID_SKU)
     qty = pricing.parse_qty(raw_qty)
@@ -63,8 +62,8 @@ def _quote(conn, raw_cust, raw_sku, raw_qty):
         raise OrderRejected(INSUFFICIENT_STOCK)
     priced = pricing.price(p[1], qty, c[0])
     used = conn.execute(
-        "SELECT COALESCE(SUM(total_cents),0) FROM orders "
-        "WHERE cust_no=? AND status IN ('N','P')", (cust,)
+        "SELECT COALESCE(SUM(total_cents),0) FROM orders WHERE cust_no=? AND status IN ('N','P')",
+        (cust,),
     ).fetchone()[0]
     if used + priced.total_cents > c[1] * 100:
         raise OrderRejected(CREDIT_EXCEEDED)
@@ -97,11 +96,12 @@ def create_order(raw_cust, raw_sku, raw_qty):
             try:
                 quote = _quote(conn, raw_cust, raw_sku, raw_qty)
                 cur = conn.execute(
-                    "INSERT INTO orders (cust_no,sku,qty,total_cents,status) "
-                    "VALUES (?,?,?,?,'N')",
-                    (quote.cust_no, quote.sku, quote.qty, quote.price.total_cents))
-                conn.execute("UPDATE products SET stock=stock-? WHERE sku=?",
-                             (quote.qty, quote.sku))
+                    "INSERT INTO orders (cust_no,sku,qty,total_cents,status) VALUES (?,?,?,?,'N')",
+                    (quote.cust_no, quote.sku, quote.qty, quote.price.total_cents),
+                )
+                conn.execute(
+                    "UPDATE products SET stock=stock-? WHERE sku=?", (quote.qty, quote.sku)
+                )
                 conn.commit()
                 return cur.lastrowid, quote
             except BaseException:

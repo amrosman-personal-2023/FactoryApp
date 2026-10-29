@@ -1,0 +1,25 @@
+# Tooling configuration for the migrated web app (target/).
+# legacy/ is the frozen parity oracle and is deliberately not linted or reformatted.
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+src = ["."]
+
+[tool.ruff.lint]
+select = [
+  "E",  # pycodestyle errors
+  "W",  # pycodestyle warnings
+  "F",  # pyflakes (unused imports/variables, undefined names)
+  "I",  # import sorting
+  "B",  # flake8-bugbear (likely bugs)
+]
+
+[tool.ruff.lint.isort]
+known-first-party = ["app"]
+
+[tool.mypy]
+python_version = "3.11"
+files = ["app"]
+# Tests are exercised through unittest/pytest with dynamic sys.path setup;
+# the type-checked surface is the app itself.
+exclude = ["tests"]

@@ -4,6 +4,7 @@ Expected tuples come from the frozen legacy SearchTests (ACME finds
 C1001 / ACME HARDWARE / DALLAS, not CONTOSO) and the app/db.py seed. The
 page and GET /api/search/customers share app/services/search.py.
 """
+
 import os
 import re
 from unittest import mock
@@ -14,8 +15,10 @@ from app.services import search
 
 HX = {"HX-Request": "true"}
 ACME = ("C1001", "ACME HARDWARE", "DALLAS")
-ROW = re.compile(r'<tr class="search-match" data-cust-no="[^"]*">\s*'
-                 r'<td>([^<]*)</td><td>([^<]*)</td><td>([^<]*)</td>')
+ROW = re.compile(
+    r'<tr class="search-match" data-cust-no="[^"]*">\s*'
+    r"<td>([^<]*)</td><td>([^<]*)</td><td>([^<]*)</td>"
+)
 PAGES = ("/customers", "/orders/new", "/orders", "/reports/sales", "/customers/search")
 
 
@@ -72,20 +75,27 @@ class CustomerSearchPageTests(WebTestCase):
 
     def test_page_shows_the_same_twelve_matches_as_the_api(self):
         for n in range(1, 14):
-            self.execute("INSERT INTO customers VALUES (?,?,?,'S',1000)",
-                         "L%02d" % n, "LIMITCHECK %02d" % n, "CITY %02d" % n)
+            self.execute(
+                "INSERT INTO customers VALUES (?,?,?,'S',1000)",
+                "L%02d" % n,
+                "LIMITCHECK %02d" % n,
+                "CITY %02d" % n,
+            )
         rows = self.rows(self.fragment("limitcheck"))
         self.assertEqual(len(rows), 12)
         self.assertEqual(len(set(rows)), 12)
         self.assertEqual(rows, self.api("limitcheck"))
 
     def test_twenty_character_width_and_wildcards_on_the_page(self):
-        self.execute("INSERT INTO customers VALUES ('W2001','ABCDEFGHIJKLMNOPQRST','WIDTHVILLE','S',1)")
+        self.execute(
+            "INSERT INTO customers VALUES ('W2001','ABCDEFGHIJKLMNOPQRST','WIDTHVILLE','S',1)"
+        )
         self.execute("INSERT INTO customers VALUES ('K1','WILDAXB','ONE','S',1)")
         self.execute("INSERT INTO customers VALUES ('K2','WILDAXXB','TWO','S',1)")
         for term in ("ABCDEFGHIJKLMNOPQRST", "ABCDEFGHIJKLMNOPQRSTZ"):
-            self.assertEqual(self.rows(self.fragment(term)),
-                             [("W2001", "ABCDEFGHIJKLMNOPQRST", "WIDTHVILLE")])
+            self.assertEqual(
+                self.rows(self.fragment(term)), [("W2001", "ABCDEFGHIJKLMNOPQRST", "WIDTHVILLE")]
+            )
         self.assertEqual([r[0] for r in self.rows(self.fragment("WILDA_B"))], ["K1"])
         self.assertEqual([r[0] for r in self.rows(self.fragment("WILDA%B"))], ["K1", "K2"])
 
@@ -111,26 +121,41 @@ class CustomerSearchPageTests(WebTestCase):
             body = self.client.get("/api/search/customers", params={"name": "x"}).json()
             html = self.fragment("x")
         self.assertEqual(svc.call_count, 2)
-        self.assertEqual(body, {"term": "SHARED",
-                                "customers": [{"cust_no": "X1", "name": "SHARED CO", "city": "TYLER"}]})
+        self.assertEqual(
+            body,
+            {
+                "term": "SHARED",
+                "customers": [{"cust_no": "X1", "name": "SHARED CO", "city": "TYLER"}],
+            },
+        )
         self.assertEqual(self.rows(html), [("X1", "SHARED CO", "TYLER")])
 
     def test_search_api_coexists_with_customer_lookup(self):
         found = self.client.get("/api/search/customers", params={"name": "ACME"})
         self.assertEqual(found.status_code, 200)
-        self.assertEqual(found.json(), {"term": "ACME", "customers": [
-            {"cust_no": "C1001", "name": "ACME HARDWARE", "city": "DALLAS"}]})
+        self.assertEqual(
+            found.json(),
+            {
+                "term": "ACME",
+                "customers": [{"cust_no": "C1001", "name": "ACME HARDWARE", "city": "DALLAS"}],
+            },
+        )
         lookup = self.client.get("/api/customers/C1001")
         self.assertEqual(lookup.status_code, 200)
         self.assertEqual(lookup.json()["name"], "ACME HARDWARE")
         self.assertEqual(lookup.json()["open_total_cents"], 4218)
-        self.assertEqual(self.client.get("/customers/lookup", params={"cust_no": "C1001"}).status_code,
-                         200)
+        self.assertEqual(
+            self.client.get("/customers/lookup", params={"cust_no": "C1001"}).status_code, 200
+        )
 
     def test_every_page_links_to_all_five_screens(self):
-        links = ('<a href="/customers">Customers</a>', '<a href="/orders/new">Order entry</a>',
-                 '<a href="/orders">Order list</a>', '<a href="/reports/sales">Sales report</a>',
-                 '<a href="/customers/search">Customer search</a>')
+        links = (
+            '<a href="/customers">Customers</a>',
+            '<a href="/orders/new">Order entry</a>',
+            '<a href="/orders">Order list</a>',
+            '<a href="/reports/sales">Sales report</a>',
+            '<a href="/customers/search">Customer search</a>',
+        )
         for path in PAGES:
             with self.subTest(path=path):
                 r = self.client.get(path)
@@ -149,4 +174,6 @@ class CustomerSearchPageTests(WebTestCase):
         self.assertIn('value="ACME"', page.text)
         self.assertEqual(frag.status_code, 503)
         self.assertIn(search.SEARCH_UNAVAILABLE, frag.text)
-        self.assertEqual((api.status_code, api.json()), (503, {"detail": search.SEARCH_UNAVAILABLE}))
+        self.assertEqual(
+            (api.status_code, api.json()), (503, {"detail": search.SEARCH_UNAVAILABLE})
+        )

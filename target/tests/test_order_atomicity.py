@@ -3,6 +3,7 @@
 Faults are injected with test-only SQLite triggers; there is no production
 fault-control endpoint.
 """
+
 import sqlite3
 import threading
 import time
@@ -34,14 +35,20 @@ class OrderAtomicityTests(WebTestCase):
 
     def test_competing_orders_cannot_oversell(self):
         self.execute("UPDATE products SET stock=10 WHERE sku='DRL-03'")
-        results = self.race([{"cust_no": "C1001", "sku": "DRL-03", "qty": "6"},
-                             {"cust_no": "C1003", "sku": "DRL-03", "qty": "6"}])
+        results = self.race(
+            [
+                {"cust_no": "C1001", "sku": "DRL-03", "qty": "6"},
+                {"cust_no": "C1003", "sku": "DRL-03", "qty": "6"},
+            ]
+        )
         codes = sorted(r.status_code for r in results)
         self.assertEqual(codes, [201, 409])
         loser = [r for r in results if r.status_code == 409][0]
         self.assertEqual(loser.json()["detail"], orders.INSUFFICIENT_STOCK)
         self.assertEqual(self.stock("DRL-03"), 4)
-        self.assertEqual(len(self.query("SELECT 1 FROM orders WHERE sku='DRL-03' AND status='N'")), 1)
+        self.assertEqual(
+            len(self.query("SELECT 1 FROM orders WHERE sku='DRL-03' AND status='N'")), 1
+        )
 
     def test_competing_orders_cannot_over_credit(self):
         # $100 limit, 4218 already open: room for exactly one more 4218 order.
@@ -51,8 +58,12 @@ class OrderAtomicityTests(WebTestCase):
         self.assertEqual(sorted(r.status_code for r in results), [201, 409])
         loser = [r for r in results if r.status_code == 409][0]
         self.assertEqual(loser.json()["detail"], orders.CREDIT_EXCEEDED)
-        self.assertEqual(self.query("SELECT SUM(total_cents) FROM orders WHERE cust_no='C1001' "
-                                    "AND status IN ('N','P')")[0][0], 8436)
+        self.assertEqual(
+            self.query(
+                "SELECT SUM(total_cents) FROM orders WHERE cust_no='C1001' AND status IN ('N','P')"
+            )[0][0],
+            8436,
+        )
         self.assertEqual(self.stock("HAM-01"), 114)
 
     def test_authoritative_reads_wait_for_the_write_lock(self):
@@ -83,16 +94,21 @@ class OrderAtomicityTests(WebTestCase):
         self.assertEqual(len(self.query("SELECT 1 FROM orders")), 4)
 
     def test_failure_between_order_insert_and_stock_update_rolls_back(self):
-        self.execute("CREATE TRIGGER fail_stock BEFORE UPDATE ON products "
-                     "BEGIN SELECT RAISE(ABORT, 'injected failure'); END")
+        self.execute(
+            "CREATE TRIGGER fail_stock BEFORE UPDATE ON products "
+            "BEGIN SELECT RAISE(ABORT, 'injected failure'); END"
+        )
         before = self.snapshot()
         r = self.client.post("/api/orders", json={"cust_no": "C1001", "sku": "HAM-01", "qty": "3"})
         self.assertEqual(r.status_code, 503)
         self.assertEqual(r.json()["detail"], orders.NOT_CREATED)
         self.assertEqual(self.snapshot(), before)
 
-        page = self.client.post("/orders/confirm", headers={"HX-Request": "true"},
-                                data={"cust_no": "C1001", "sku": "HAM-01", "qty": "3"})
+        page = self.client.post(
+            "/orders/confirm",
+            headers={"HX-Request": "true"},
+            data={"cust_no": "C1001", "sku": "HAM-01", "qty": "3"},
+        )
         self.assertEqual(page.status_code, 503)
         self.assertIn(orders.NOT_CREATED, page.text)
         self.assertNotIn("CREATED</strong>", page.text.replace(orders.NOT_CREATED, ""))
@@ -103,8 +119,12 @@ class OrderAtomicityTests(WebTestCase):
         real_connect = sqlite3.connect
         try:
             blocker.execute("BEGIN IMMEDIATE")
-            with mock.patch.object(appdb, "connect", lambda: real_connect(appdb.DB_PATH, timeout=0.1)):
-                r = self.client.post("/api/orders", json={"cust_no": "C1001", "sku": "HAM-01", "qty": "3"})
+            with mock.patch.object(
+                appdb, "connect", lambda: real_connect(appdb.DB_PATH, timeout=0.1)
+            ):
+                r = self.client.post(
+                    "/api/orders", json={"cust_no": "C1001", "sku": "HAM-01", "qty": "3"}
+                )
         finally:
             blocker.rollback()
             blocker.close()
@@ -114,8 +134,10 @@ class OrderAtomicityTests(WebTestCase):
         self.assertEqual(self.stock("HAM-01"), 117)
 
     def test_failure_on_order_insert_leaves_stock_unchanged(self):
-        self.execute("CREATE TRIGGER fail_insert BEFORE INSERT ON orders "
-                     "BEGIN SELECT RAISE(ABORT, 'injected failure'); END")
+        self.execute(
+            "CREATE TRIGGER fail_insert BEFORE INSERT ON orders "
+            "BEGIN SELECT RAISE(ABORT, 'injected failure'); END"
+        )
         before = self.snapshot()
         r = self.client.post("/api/orders", json={"cust_no": "C1001", "sku": "HAM-01", "qty": "3"})
         self.assertEqual(r.status_code, 503)

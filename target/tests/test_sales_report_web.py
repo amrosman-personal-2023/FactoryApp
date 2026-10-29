@@ -5,6 +5,7 @@ Expected cents come from the frozen legacy ReportTests/PricingTests oracle
 dollars on the page (65720 -> $657.20). The page and GET /api/reports/sales
 share app/services/report.py.
 """
+
 import os
 import re
 from unittest import mock
@@ -12,21 +13,24 @@ from unittest import mock
 from helpers import WebTestCase, appdb
 
 from app.services import report
-
 from app.templating import dollars
 
 HX = {"HX-Request": "true"}
-SEED_GRAND_CENTS = 65720   # legacy ReportTests.test_grand_total_excludes_cancelled
-HAM3_CENTS = 4218          # legacy PricingTests.test_standard_tier_truncates_tax
-ROW = re.compile(r'<tr id="report-([^"]+)" data-cust-no="[^"]+">\s*'
-                 r'<td>[^<]*</td><td>([^<]*)</td>\s*'
-                 r'<td class="num">(\d+)</td><td class="num">([^<]+)</td>')
+SEED_GRAND_CENTS = 65720  # legacy ReportTests.test_grand_total_excludes_cancelled
+HAM3_CENTS = 4218  # legacy PricingTests.test_standard_tier_truncates_tax
+ROW = re.compile(
+    r'<tr id="report-([^"]+)" data-cust-no="[^"]+">\s*'
+    r"<td>[^<]*</td><td>([^<]*)</td>\s*"
+    r'<td class="num">(\d+)</td><td class="num">([^<]+)</td>'
+)
 GRAND = re.compile(r'<tr id="report-grand-total">.*?<strong>([^<]+)</strong>', re.S)
 
-SEED_REPORT_PAGE = [("C1003", "CONTOSO SUPPLY", 1, "$564.12"),
-                    ("C1002", "BRIGHT FUTURES LLC", 1, "$50.90"),
-                    ("C1001", "ACME HARDWARE", 1, "$42.18"),
-                    ("C1004", "DELTA TOOLWORKS", 0, "$0.00")]
+SEED_REPORT_PAGE = [
+    ("C1003", "CONTOSO SUPPLY", 1, "$564.12"),
+    ("C1002", "BRIGHT FUTURES LLC", 1, "$50.90"),
+    ("C1001", "ACME HARDWARE", 1, "$42.18"),
+    ("C1004", "DELTA TOOLWORKS", 0, "$0.00"),
+]
 
 
 class SalesReportPageTests(WebTestCase):
@@ -46,9 +50,13 @@ class SalesReportPageTests(WebTestCase):
     def test_page_and_api_show_the_same_report(self):
         body = self.client.get("/api/reports/sales").json()
         html = self.client.get("/reports/sales").text
-        self.assertEqual([(row["cust_no"], row["name"], row["order_count"],
-                           dollars(row["sales_cents"])) for row in body["rows"]],
-                         self.page_rows(html))
+        self.assertEqual(
+            [
+                (row["cust_no"], row["name"], row["order_count"], dollars(row["sales_cents"]))
+                for row in body["rows"]
+            ],
+            self.page_rows(html),
+        )
         self.assertEqual(self.grand(html), dollars(body["grand_total_cents"]))
         self.assertEqual(body["grand_total_cents"], SEED_GRAND_CENTS)
 
@@ -58,8 +66,15 @@ class SalesReportPageTests(WebTestCase):
             body = self.client.get("/api/reports/sales").json()
             html = self.client.get("/reports/sales").text
         self.assertEqual(svc.call_count, 2)
-        self.assertEqual(body, {"rows": [{"cust_no": "X1", "name": "SHARED CO", "order_count": 7,
-                                          "sales_cents": 123456}], "grand_total_cents": 123456})
+        self.assertEqual(
+            body,
+            {
+                "rows": [
+                    {"cust_no": "X1", "name": "SHARED CO", "order_count": 7, "sales_cents": 123456}
+                ],
+                "grand_total_cents": 123456,
+            },
+        )
         self.assertEqual(self.page_rows(html), [("X1", "SHARED CO", 7, "$1234.56")])
         self.assertEqual(self.grand(html), "$1234.56")
 
@@ -113,15 +128,20 @@ class SalesReportPageTests(WebTestCase):
         self.assertNotIn("GRAND TOTAL", page.text)
         self.assertEqual(frag.status_code, 503)
         self.assertIn(report.REPORT_UNAVAILABLE, frag.text)
-        self.assertEqual((api.status_code, api.json()), (503, {"detail": report.REPORT_UNAVAILABLE}))
+        self.assertEqual(
+            (api.status_code, api.json()), (503, {"detail": report.REPORT_UNAVAILABLE})
+        )
 
 
 class CrossScreenReportTests(WebTestCase):
     """One web-created order followed through credit exposure, the order list and the report."""
 
     def create_via_web(self):
-        r = self.client.post("/orders/confirm", headers=HX, data={
-            "cust_no": "C1001", "sku": "HAM-01", "qty": "3", "preview_total_cents": "4218"})
+        r = self.client.post(
+            "/orders/confirm",
+            headers=HX,
+            data={"cust_no": "C1001", "sku": "HAM-01", "qty": "3", "preview_total_cents": "4218"},
+        )
         self.assertEqual(r.status_code, 201, r.text)
         return int(re.search(r"ORDER (\d+)", r.text).group(1))
 
@@ -150,19 +170,24 @@ class CrossScreenReportTests(WebTestCase):
                     self.act_via_web(order_no, "ship")
                 self.assertEqual(self.client.get(f"/api/orders/{order_no}").json()["status"], step)
                 body = self.report()
-                self.assertEqual((self.acme(body)["order_count"], self.acme(body)["sales_cents"]),
-                                 (2, 2 * HAM3_CENTS))
+                self.assertEqual(
+                    (self.acme(body)["order_count"], self.acme(body)["sales_cents"]),
+                    (2, 2 * HAM3_CENTS),
+                )
                 self.assertEqual(body["grand_total_cents"], SEED_GRAND_CENTS + HAM3_CENTS)
-                self.assertEqual([row["cust_no"] for row in body["rows"]],
-                                 ["C1003", "C1001", "C1002", "C1004"])
+                self.assertEqual(
+                    [row["cust_no"] for row in body["rows"]], ["C1003", "C1001", "C1002", "C1004"]
+                )
                 # Shipping ends only the credit exposure, not the sale.
                 self.assertEqual(self.exposure(), HAM3_CENTS if step == "S" else 2 * HAM3_CENTS)
                 html = self.client.get("/reports/sales").text
                 self.assertIn(dollars(2 * HAM3_CENTS), html)
                 self.assertIn(dollars(SEED_GRAND_CENTS + HAM3_CENTS), html)
                 listed = self.client.get("/orders").text
-                self.assertIn(f'<tr id="order-{order_no}" data-order-no="{order_no}" '
-                              f'data-status="{step}">', listed)
+                self.assertIn(
+                    f'<tr id="order-{order_no}" data-order-no="{order_no}" data-status="{step}">',
+                    listed,
+                )
 
     def test_cancel_restores_stock_exposure_and_report(self):
         baseline = self.report()
@@ -173,7 +198,7 @@ class CrossScreenReportTests(WebTestCase):
         self.assertEqual(self.report()["grand_total_cents"], SEED_GRAND_CENTS + HAM3_CENTS)
         self.act_via_web(order_no, "cancel")
         self.assertEqual(self.client.get(f"/api/orders/{order_no}").json()["status"], "C")
-        self.assertIn(f'data-status="C"', self.client.get("/orders").text)
+        self.assertIn('data-status="C"', self.client.get("/orders").text)
         self.assertEqual(self.stock("HAM-01"), stock)
         self.assertEqual(self.exposure(), HAM3_CENTS)
         after = self.report()

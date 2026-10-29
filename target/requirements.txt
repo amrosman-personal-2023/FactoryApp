@@ -5,3 +5,7 @@ uvicorn==0.54.0
 jinja2==3.1.6
 httpx==0.28.1
 python-multipart==0.0.32
+# Dev tooling: ruff lints target/ (run_checks.sh gate) as well as formatting.
+ruff==0.17.3
+# Dev tooling: mypy type-checks target/app (run_checks.sh gate).
+mypy==2.4.1

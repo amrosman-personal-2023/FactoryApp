@@ -9,6 +9,14 @@ fail=0
 echo "== Legacy characterization tests (parity oracle - do not weaken) =="
 python3 -W ignore -m unittest discover -s tests -v || fail=1
 
+echo "== Target web app: lint + format + types =="
+if python3 -c "import fastapi" 2>/dev/null; then
+  (cd target && python3 -m ruff check . && python3 -m ruff format --check . && python3 -m mypy) || fail=1
+else
+  echo "ERROR: FastAPI missing; install target/requirements.txt" >&2
+  fail=1
+fi
+
 echo "== Target web app: smoke + parity =="
 if python3 -c "import fastapi" 2>/dev/null; then
   (cd target && python3 -m unittest discover -s tests -v) || fail=1

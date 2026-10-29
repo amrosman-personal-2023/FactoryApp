@@ -5,6 +5,7 @@ are always computed server-side. Money is returned as integer cents. Every
 field, including an integer qty, goes through the legacy field-width rules,
 so qty 12345 is read as 1234 exactly as the four-character terminal field did.
 """
+
 from typing import Annotated, Union
 
 from fastapi import APIRouter
@@ -27,8 +28,9 @@ REJECTION_STATUS = {
 
 RawField = Annotated[StrictStr, StringConstraints(max_length=pricing.MAX_RAW_CHARS)]
 # An integer qty is replayed as its decimal text, so it gets the same bound.
-RawInt = Annotated[StrictInt, Field(gt=-10 ** (pricing.MAX_RAW_CHARS - 1),
-                                    lt=10 ** pricing.MAX_RAW_CHARS)]
+RawInt = Annotated[
+    StrictInt, Field(gt=-(10 ** (pricing.MAX_RAW_CHARS - 1)), lt=10**pricing.MAX_RAW_CHARS)
+]
 
 
 class OrderRequest(BaseModel):

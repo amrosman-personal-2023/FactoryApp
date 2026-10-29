@@ -1,4 +1,5 @@
 """Shared Jinja2 environment. Money is formatted only here, at the UI edge."""
+
 import os
 
 from fastapi.templating import Jinja2Templates

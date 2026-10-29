@@ -8,6 +8,7 @@ Conventions (from AGENTS.md):
 - All SQL is parameterized. Never build SQL from strings (legacy search_screen
   had a SQL injection quirk; the new app must not).
 """
+
 import os
 import sqlite3
 
@@ -73,8 +74,8 @@ def init(reset=False):
         conn.executemany("INSERT INTO customers VALUES (?,?,?,?,?)", CUSTOMERS)
         conn.executemany("INSERT INTO products VALUES (?,?,?,?)", PRODUCTS)
         conn.executemany(
-            "INSERT INTO orders (cust_no,sku,qty,total_cents,status) VALUES (?,?,?,?,?)",
-            ORDERS)
+            "INSERT INTO orders (cust_no,sku,qty,total_cents,status) VALUES (?,?,?,?,?)", ORDERS
+        )
         for _, sku, qty, _, status in ORDERS:
             if status != "C":
                 conn.execute("UPDATE products SET stock=stock-? WHERE sku=?", (qty, sku))

@@ -4,6 +4,7 @@ Expected money strings are the seed totals from app/db.py (the legacy seed)
 formatted as dollars (4218 -> $42.18). Row actions share the lifecycle
 service with POST /api/orders/{order_no}/{action}.
 """
+
 import os
 import re
 from unittest import mock
@@ -22,7 +23,7 @@ class OrderListWebTests(WebTestCase):
 
     def row_html(self, html, order_no):
         start = html.index(f'<tr id="order-{order_no}"')
-        return html[start:html.index("</tr>", start)]
+        return html[start : html.index("</tr>", start)]
 
     def act(self, order_no, action, **kw):
         return self.client.post(f"/orders/{order_no}/{action}", **kw)
@@ -33,10 +34,11 @@ class OrderListWebTests(WebTestCase):
         self.assertIn("ORDER LIST", r.text)
         self.assertEqual(self.rows(r.text), [(4, "C"), (3, "S"), (2, "P"), (1, "N")])
         for order_no, cust, sku, total, status in (
-                (1, "C1001", "HAM-01", "$42.18", "NEW (N)"),
-                (2, "C1002", "SAW-02", "$50.90", "PICKED (P)"),
-                (3, "C1003", "NAI-04", "$564.12", "SHIPPED (S)"),
-                (4, "C1004", "DRL-03", "$97.41", "CANCELLED (C)")):
+            (1, "C1001", "HAM-01", "$42.18", "NEW (N)"),
+            (2, "C1002", "SAW-02", "$50.90", "PICKED (P)"),
+            (3, "C1003", "NAI-04", "$564.12", "SHIPPED (S)"),
+            (4, "C1004", "DRL-03", "$97.41", "CANCELLED (C)"),
+        ):
             row = self.row_html(r.text, order_no)
             for shown in (cust, sku, total, status):
                 self.assertIn(shown, row)
@@ -68,7 +70,9 @@ class OrderListWebTests(WebTestCase):
         self.assertEqual(self.rows(self.client.get("/orders").text)[3], (1, "S"))
         self.assertEqual(self.client.get("/api/orders/1").json()["status"], "S")
         self.assertEqual(self.query("SELECT * FROM products ORDER BY sku"), products)
-        self.assertEqual(self.query("SELECT * FROM orders WHERE order_no<>1 ORDER BY order_no"), others)
+        self.assertEqual(
+            self.query("SELECT * FROM orders WHERE order_no<>1 ORDER BY order_no"), others
+        )
 
     def test_cancel_new_and_picked_orders_restock(self):
         for order_no, sku, qty in ((1, "HAM-01", 3), (2, "SAW-02", 2)):
@@ -96,8 +100,16 @@ class OrderListWebTests(WebTestCase):
 
     def test_invalid_web_actions_change_nothing_and_list_stays_usable(self):
         before = self.snapshot()
-        for order_no, action in ((1, "ship"), (2, "pick"), (3, "pick"), (3, "ship"), (3, "cancel"),
-                                 (4, "pick"), (4, "ship"), (4, "cancel")):
+        for order_no, action in (
+            (1, "ship"),
+            (2, "pick"),
+            (3, "pick"),
+            (3, "ship"),
+            (3, "cancel"),
+            (4, "pick"),
+            (4, "ship"),
+            (4, "cancel"),
+        ):
             with self.subTest(order_no=order_no, action=action):
                 r = self.act(order_no, action, headers=HX)
                 self.assertEqual(r.status_code, 409)

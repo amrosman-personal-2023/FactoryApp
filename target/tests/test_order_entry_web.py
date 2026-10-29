@@ -3,6 +3,7 @@
 Expected money strings are the legacy oracle cents from
 tests/test_characterization.py formatted as dollars (4218 -> $42.18).
 """
+
 import os
 from unittest import mock
 
@@ -16,11 +17,21 @@ HX = {"HX-Request": "true"}
 
 class OrderEntryWebTests(WebTestCase):
     def preview(self, cust, sku, qty):
-        return self.client.post("/orders/preview", data={"cust_no": cust, "sku": sku, "qty": qty}, headers=HX)
+        return self.client.post(
+            "/orders/preview", data={"cust_no": cust, "sku": sku, "qty": qty}, headers=HX
+        )
 
     def confirm(self, cust, sku, qty, preview_total_cents=""):
-        return self.client.post("/orders/confirm", headers=HX, data={
-            "cust_no": cust, "sku": sku, "qty": qty, "preview_total_cents": preview_total_cents})
+        return self.client.post(
+            "/orders/confirm",
+            headers=HX,
+            data={
+                "cust_no": cust,
+                "sku": sku,
+                "qty": qty,
+                "preview_total_cents": preview_total_cents,
+            },
+        )
 
     def test_standard_preview_truncates_tax_and_writes_nothing(self):
         before = self.snapshot()
@@ -33,7 +44,9 @@ class OrderEntryWebTests(WebTestCase):
         self.assertEqual(self.snapshot(), before)
 
     def test_preview_without_htmx_renders_full_page(self):
-        r = self.client.post("/orders/preview", data={"cust_no": "C1001", "sku": "HAM-01", "qty": "3"})
+        r = self.client.post(
+            "/orders/preview", data={"cust_no": "C1001", "sku": "HAM-01", "qty": "3"}
+        )
         self.assertEqual(r.status_code, 200)
         self.assertIn("ORDER ENTRY", r.text)
         self.assertIn("$42.18", r.text)
@@ -60,8 +73,10 @@ class OrderEntryWebTests(WebTestCase):
         self.assertEqual(r.status_code, 201, r.text)
         self.assertIn("ORDER 5 CREATED", r.text)
         self.assertIn("$42.18", r.text)
-        self.assertEqual(self.query("SELECT cust_no,sku,qty,total_cents,status FROM orders WHERE order_no>4"),
-                         [("C1001", "HAM-01", 3, 4218, "N")])
+        self.assertEqual(
+            self.query("SELECT cust_no,sku,qty,total_cents,status FROM orders WHERE order_no>4"),
+            [("C1001", "HAM-01", 3, 4218, "N")],
+        )
         self.assertEqual(self.stock("HAM-01"), 114)
 
     def test_confirm_matches_direct_api_on_independent_seed(self):
@@ -72,11 +87,15 @@ class OrderEntryWebTests(WebTestCase):
         self.assertEqual(self.snapshot(), web_rows)
 
     def test_confirm_without_htmx_renders_full_page(self):
-        ok = self.client.post("/orders/confirm", data={"cust_no": "C1001", "sku": "HAM-01", "qty": "3"})
+        ok = self.client.post(
+            "/orders/confirm", data={"cust_no": "C1001", "sku": "HAM-01", "qty": "3"}
+        )
         self.assertEqual(ok.status_code, 201)
         self.assertIn("ORDER ENTRY", ok.text)
         self.assertIn("ORDER 5 CREATED", ok.text)
-        bad = self.client.post("/orders/confirm", data={"cust_no": "C1001", "sku": "DRL-03", "qty": "16"})
+        bad = self.client.post(
+            "/orders/confirm", data={"cust_no": "C1001", "sku": "DRL-03", "qty": "16"}
+        )
         self.assertEqual(bad.status_code, 409)
         self.assertIn("ORDER ENTRY", bad.text)
         self.assertIn("INSUFFICIENT STOCK", bad.text)
@@ -146,18 +165,24 @@ class StalePreviewTests(WebTestCase):
     """The preview is not a reservation; confirmation recomputes everything."""
 
     def preview(self):
-        r = self.client.post("/orders/preview", headers=HX,
-                             data={"cust_no": "C1001", "sku": "HAM-01", "qty": "3"})
+        r = self.client.post(
+            "/orders/preview", headers=HX, data={"cust_no": "C1001", "sku": "HAM-01", "qty": "3"}
+        )
         self.assertEqual(r.status_code, 200, r.text)
 
     def confirm(self):
-        return self.client.post("/orders/confirm", headers=HX, data={
-            "cust_no": "C1001", "sku": "HAM-01", "qty": "3", "preview_total_cents": "4218"})
+        return self.client.post(
+            "/orders/confirm",
+            headers=HX,
+            data={"cust_no": "C1001", "sku": "HAM-01", "qty": "3", "preview_total_cents": "4218"},
+        )
 
     def test_stock_consumed_after_preview_rejects_confirmation(self):
         self.execute("UPDATE products SET stock=3 WHERE sku='HAM-01'")
         self.preview()
-        competing = self.client.post("/api/orders", json={"cust_no": "C1002", "sku": "HAM-01", "qty": "3"})
+        competing = self.client.post(
+            "/api/orders", json={"cust_no": "C1002", "sku": "HAM-01", "qty": "3"}
+        )
         self.assertEqual(competing.status_code, 201)
         before = self.snapshot()
         r = self.confirm()
@@ -169,7 +194,9 @@ class StalePreviewTests(WebTestCase):
     def test_credit_consumed_after_preview_rejects_confirmation(self):
         self.execute("UPDATE customers SET credit_lim=100 WHERE cust_no='C1001'")
         self.preview()
-        competing = self.client.post("/api/orders", json={"cust_no": "C1001", "sku": "HAM-01", "qty": "3"})
+        competing = self.client.post(
+            "/api/orders", json={"cust_no": "C1001", "sku": "HAM-01", "qty": "3"}
+        )
         self.assertEqual(competing.status_code, 201)
         before = self.snapshot()
         r = self.confirm()
@@ -186,7 +213,9 @@ class StalePreviewTests(WebTestCase):
         self.assertEqual(r.status_code, 201, r.text)
         self.assertIn("current price", r.text)
         self.assertEqual(self.snapshot(), twin.snapshot())
-        self.assertNotEqual(self.query("SELECT total_cents FROM orders WHERE order_no=5")[0][0], 4218)
+        self.assertNotEqual(
+            self.query("SELECT total_cents FROM orders WHERE order_no=5")[0][0], 4218
+        )
 
     def test_unchanged_price_does_not_report_repricing(self):
         self.preview()
@@ -198,10 +227,20 @@ class StalePreviewTests(WebTestCase):
         for shown in ("9" * 5000, "abc", "\u0664\u0662\u0661\u0668", ""):
             with self.subTest(shown=shown[:10]):
                 appdb.init(reset=True).close()
-                r = self.client.post("/orders/confirm", headers=HX, data={
-                    "cust_no": "C1001", "sku": "HAM-01", "qty": "3", "preview_total_cents": shown})
+                r = self.client.post(
+                    "/orders/confirm",
+                    headers=HX,
+                    data={
+                        "cust_no": "C1001",
+                        "sku": "HAM-01",
+                        "qty": "3",
+                        "preview_total_cents": shown,
+                    },
+                )
                 self.assertEqual(r.status_code, 201, r.text)
-                self.assertEqual(self.query("SELECT total_cents FROM orders WHERE order_no=5"), [(4218,)])
+                self.assertEqual(
+                    self.query("SELECT total_cents FROM orders WHERE order_no=5"), [(4218,)]
+                )
                 self.assertEqual("current price" in r.text, shown == "9" * 5000)
 
     def test_confirm_order_service_reports_repricing(self):

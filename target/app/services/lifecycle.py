@@ -7,6 +7,7 @@ both apply identical rules:
 - any other action/status pairing changes nothing (legacy silent no-op);
 - cancelling returns the order quantity to its SKU's stock.
 """
+
 import sqlite3
 from dataclasses import dataclass
 
@@ -78,8 +79,9 @@ class LifecycleUnavailable(LifecycleError):
 
 
 def _fetch(conn, order_no):
-    row = conn.execute("SELECT " + _COLUMNS + " FROM orders WHERE order_no=?",
-                       (order_no,)).fetchone()
+    row = conn.execute(
+        "SELECT " + _COLUMNS + " FROM orders WHERE order_no=?", (order_no,)
+    ).fetchone()
     return Order(*row) if row else None
 
 
@@ -87,8 +89,9 @@ def list_orders():
     try:
         conn = db.connect()
         try:
-            rows = conn.execute("SELECT " + _COLUMNS + " FROM orders "
-                                "ORDER BY order_no DESC").fetchall()
+            rows = conn.execute(
+                "SELECT " + _COLUMNS + " FROM orders ORDER BY order_no DESC"
+            ).fetchall()
         finally:
             conn.close()
     except sqlite3.Error as exc:
@@ -129,13 +132,16 @@ def apply_action(order_no, action):
                     raise OrderNotFound()
                 if order.status not in sources:
                     raise TransitionRejected(order=order)
-                cur = conn.execute("UPDATE orders SET status=? WHERE order_no=? AND status=?",
-                                   (target, order.order_no, order.status))
+                cur = conn.execute(
+                    "UPDATE orders SET status=? WHERE order_no=? AND status=?",
+                    (target, order.order_no, order.status),
+                )
                 if cur.rowcount != 1:
                     raise LifecycleUnavailable()
                 if target == "C":
-                    conn.execute("UPDATE products SET stock=stock+? WHERE sku=?",
-                                 (order.qty, order.sku))
+                    conn.execute(
+                        "UPDATE products SET stock=stock+? WHERE sku=?", (order.qty, order.sku)
+                    )
                 updated = _fetch(conn, order.order_no)
                 conn.commit()
                 return updated

@@ -6,6 +6,7 @@ target/app/orders.db or a .venv in the real checkout. Live tests need
 127.0.0.1:8000; they are skipped when something else already listens there,
 because the launcher must never take over or stop another listener.
 """
+
 import os
 import shutil
 import signal
@@ -68,8 +69,11 @@ class LauncherCase(unittest.TestCase):
         self.root = self.tmp / "checkout"
         self.root.mkdir()
         shutil.copy2(REPO / "start.sh", self.root / "start.sh")
-        shutil.copytree(REPO / "target", self.root / "target",
-                        ignore=shutil.ignore_patterns("__pycache__", "*.db", "tests"))
+        shutil.copytree(
+            REPO / "target",
+            self.root / "target",
+            ignore=shutil.ignore_patterns("__pycache__", "*.db", "tests"),
+        )
         self.elsewhere = self.tmp / "elsewhere"
         self.elsewhere.mkdir()
         self.venv_dir = self.root / ".venv"
@@ -79,8 +83,13 @@ class LauncherCase(unittest.TestCase):
 
     def launcher(self, *args, timeout=90):
         """Run start.sh by absolute path from a directory outside the checkout."""
-        return subprocess.run([str(self.root / "start.sh"), *args], cwd=self.elsewhere,
-                              capture_output=True, text=True, timeout=timeout)
+        return subprocess.run(
+            [str(self.root / "start.sh"), *args],
+            cwd=self.elsewhere,
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+        )
 
     def make_venv(self):
         # A real venv that sees the already-installed pinned packages, so the
@@ -109,8 +118,12 @@ class LauncherCase(unittest.TestCase):
         self.pid_file.write_text(f"pid={pid}\nstarted={started}\n")
 
     def spawn_sentinel(self, *cmd):
-        proc = subprocess.Popen(list(cmd) or ["sleep", "60"], cwd=self.tmp,
-                                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        proc = subprocess.Popen(
+            list(cmd) or ["sleep", "60"],
+            cwd=self.tmp,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
         self.addCleanup(self._stop_sentinel, proc)
         return proc
 
@@ -206,8 +219,9 @@ class LauncherLiveTests(LauncherCase):
         self.assertEqual(get("/customers")[0], 200)
         pid = self.recorded_pid()
         self.assertEqual(self.server_pids(), [pid])
-        command = subprocess.run(["ps", "-ww", "-p", str(pid), "-o", "command="],
-                                 capture_output=True, text=True).stdout
+        command = subprocess.run(
+            ["ps", "-ww", "-p", str(pid), "-o", "command="], capture_output=True, text=True
+        ).stdout
         self.assertIn(f"--host {HOST} --port {PORT}", command)
         self.assertTrue(self.log_file.exists())
         self.assertTrue((self.root / "target" / "app" / "orders.db").exists())
@@ -240,8 +254,9 @@ class LauncherLiveTests(LauncherCase):
         self.assertEqual(self.server_pids(), [])
 
     def test_start_refuses_port_held_by_another_listener(self):
-        listener = self.spawn_sentinel(sys.executable, "-m", "http.server", str(PORT),
-                                       "--bind", HOST)
+        listener = self.spawn_sentinel(
+            sys.executable, "-m", "http.server", str(PORT), "--bind", HOST
+        )
         self.assertTrue(wait_for(port_in_use), "sentinel listener did not start")
         result = self.launcher("-start")
         self.assertNotEqual(result.returncode, 0, self.output(result))
@@ -257,7 +272,8 @@ class LauncherLiveTests(LauncherCase):
 
     def test_startup_failure_is_reported_and_cleaned_up(self):
         (self.root / "target" / "app" / "main.py").write_text(
-            'raise RuntimeError("fixture startup failure")\n')
+            'raise RuntimeError("fixture startup failure")\n'
+        )
         result = self.launcher("-start")
         self.assertNotEqual(result.returncode, 0, self.output(result))
         self.assertIn("fixture startup failure", result.stderr)
