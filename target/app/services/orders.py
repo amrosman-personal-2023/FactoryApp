@@ -111,3 +111,20 @@ def create_order(raw_cust, raw_sku, raw_qty):
             conn.close()
     except sqlite3.Error as exc:
         raise OrderUnavailable(NOT_CREATED) from exc
+
+
+def confirm_order(raw_cust, raw_sku, raw_qty, preview_total_cents=""):
+    """create_order for the web confirmation, also reporting a repricing.
+
+    Returns (order_no, Quote, repriced) where ``repriced`` is True when the
+    saved total differs from the total shown on the preview. The preview total
+    is client-supplied text; it is compared as a canonical digit string, never
+    trusted for pricing and never converted with int() (which rejects
+    oversized digit strings).
+    """
+    order_no, quote = create_order(raw_cust, raw_sku, raw_qty)
+    shown = str(preview_total_cents)
+    repriced = False
+    if shown.isascii() and shown.isdigit():
+        repriced = (shown.lstrip("0") or "0") != str(quote.price.total_cents)
+    return order_no, quote, repriced

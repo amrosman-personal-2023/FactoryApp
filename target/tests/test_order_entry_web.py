@@ -184,3 +184,25 @@ class StalePreviewTests(WebTestCase):
         self.assertIn("current price", r.text)
         self.assertEqual(self.snapshot(), twin.snapshot())
         self.assertNotEqual(self.query("SELECT total_cents FROM orders WHERE order_no=5")[0][0], 4218)
+
+    def test_unchanged_price_does_not_report_repricing(self):
+        self.preview()
+        r = self.confirm()
+        self.assertEqual(r.status_code, 201, r.text)
+        self.assertNotIn("current price", r.text)
+
+    def test_tampered_preview_total_is_controlled_and_not_trusted(self):
+        for shown in ("9" * 5000, "abc", "\u0664\u0662\u0661\u0668", ""):
+            with self.subTest(shown=shown[:10]):
+                appdb.init(reset=True).close()
+                r = self.client.post("/orders/confirm", headers=HX, data={
+                    "cust_no": "C1001", "sku": "HAM-01", "qty": "3", "preview_total_cents": shown})
+                self.assertEqual(r.status_code, 201, r.text)
+                self.assertEqual(self.query("SELECT total_cents FROM orders WHERE order_no=5"), [(4218,)])
+                self.assertEqual("current price" in r.text, shown == "9" * 5000)
+
+    def test_confirm_order_service_reports_repricing(self):
+        _, quote, repriced = orders.confirm_order("C1001", "HAM-01", "3", "004218")
+        self.assertEqual((quote.price.total_cents, repriced), (4218, False))
+        _, _, repriced = orders.confirm_order("C1001", "HAM-01", "3", "4217")
+        self.assertTrue(repriced)

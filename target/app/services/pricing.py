@@ -8,7 +8,7 @@ Legacy rules preserved here (see AGENTS.md):
 
 Legacy computes discount and tax with floats and int(); the integer floor
 division below yields the same cents for non-negative amounts without
-introducing floats (pinned by test_parity.PricingUnitTests).
+introducing floats (pinned by test_parity.OrderPricingParityTests).
 """
 from dataclasses import dataclass
 
@@ -32,11 +32,14 @@ class Price:
 
 
 def field(raw, width):
-    """Replay raw text through the legacy curses prompt as keystrokes.
+    """Apply the legacy curses prompt's text rules to a submitted string.
 
-    Enter ends the field, backspace/DEL removes the last character, other
-    non-printable characters are ignored, printable ASCII is uppercased and
-    keys past the field width are never captured.
+    Each character is treated as the keystroke a terminal sends for it:
+    newline/CR ends the field, BS/DEL removes the last character, printable
+    ASCII is uppercased and keys past the field width are never captured.
+    Every other character, including ESC, is ignored. Curses function-key
+    codes (KEY_ENTER, KEY_BACKSPACE, F3, F12) are key events, not text, so
+    they have no string form here; cancelling is the explicit Decline action.
     """
     buf = ""
     for ch in str(raw):

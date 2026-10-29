@@ -178,6 +178,22 @@ class OrderInputParityTests(OrderEntryTestCase):
                 self.order(raw, "HAM-01", "1")
                 self.assertEqual(self.snapshot(), twin.snapshot())
 
+    def test_escape_character_is_ignored_text_not_a_cancel_key(self):
+        # Intentional difference: legacy ESC/F12 is a terminal key that abandons
+        # entry. Submitted text has no key events; Decline is the web cancel.
+        self.assertEqual(pricing.field("c10\x1b01", pricing.CUST_WIDTH), "C1001")
+        r = self.order("C1001\x1b", "HAM-01\x1b", "3\x1b")
+        self.assertEqual(r.status_code, 201, r.text)
+        self.assertEqual((r.json()["cust_no"], r.json()["sku"], r.json()["qty"]), ("C1001", "HAM-01", 3))
+
+    def test_every_rejection_reason_has_an_http_status(self):
+        from app.routers.orders import REJECTION_STATUS
+        from app.services import orders
+        reasons = {orders.INVALID_CUSTOMER, orders.INVALID_SKU, orders.INVALID_QTY,
+                   orders.INSUFFICIENT_STOCK, orders.CREDIT_EXCEEDED, orders.NOT_CREATED}
+        self.assertEqual(set(REJECTION_STATUS), reasons)
+        self.assertEqual(orders.OrderUnavailable.reason, orders.NOT_CREATED)
+
     def test_eight_character_identifier_width_matches_legacy(self):
         self.execute("INSERT INTO customers VALUES ('WIDE1234','WIDE CO','TYLER','G',5000)")
         self.execute("INSERT INTO customers VALUES ('WIDE12345','OVERWIDTH CO','TYLER','S',5000)")

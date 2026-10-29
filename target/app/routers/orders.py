@@ -21,6 +21,7 @@ REJECTION_STATUS = {
     orders.INVALID_QTY: 422,
     orders.INSUFFICIENT_STOCK: 409,
     orders.CREDIT_EXCEEDED: 409,
+    orders.NOT_CREATED: 503,
 }
 
 
@@ -48,8 +49,6 @@ def quote_body(quote):
 def create_order(req: OrderRequest):
     try:
         order_no, quote = orders.create_order(req.cust_no, req.sku, str(req.qty))
-    except orders.OrderRejected as exc:
+    except (orders.OrderRejected, orders.OrderUnavailable) as exc:
         return JSONResponse({"detail": exc.reason}, status_code=REJECTION_STATUS[exc.reason])
-    except orders.OrderUnavailable as exc:
-        return JSONResponse({"detail": exc.reason}, status_code=503)
     return {"order_no": order_no, "status": "N", **quote_body(quote)}
