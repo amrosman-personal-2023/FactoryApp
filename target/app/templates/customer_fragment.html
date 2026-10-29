@@ -1,0 +1,9 @@
+{% if c %}
+<p>Name   : {{ c[1] }}</p>
+<p>City   : {{ c[2] }}</p>
+<p>Tier   : {{ tier_names[c[3]] }}</p>
+<p>Credit : ${{ c[4] }}</p>
+<p>Open   : ${{ "%.2f"|format(open / 100) }}</p>
+{% else %}
+<p>CUSTOMER NOT FOUND - PRESS ANY KEY</p>
+{% endif %}
